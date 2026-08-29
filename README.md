@@ -2,7 +2,7 @@
 
 A secure, scalable remote code execution and judging platform built for competitive programming and coding evaluations.
 
-> **Status Notice (Phase 6.3 Complete)**: All phases through Phase 6.3 (User Statistics & Personal Dashboard) are complete, fully verified, and passing 44/44 unit and integration tests. Features include user registration, JWT authentication, personal solver statistics (`/users/me/stats`), difficulty breakdown ratios (`Easy`, `Medium`, `Hard`), verdict distribution metrics, and a frontend User Dashboard.
+> **Status Notice (Phase 6.4 Complete)**: All phases through Phase 6.4 (Multi-Language Support: C++, Python 3, Java 21) are complete, fully verified, and passing 48/48 unit and integration tests. Features include multi-language Docker sandboxed execution, Python syntax checking (`py_compile`), Java compilation (`javac Main.java`), 2.0x time limit scaling for interpreted/JVM runtimes, and frontend language selector with boilerplate starter templates.
 
 ---
 
@@ -10,12 +10,12 @@ A secure, scalable remote code execution and judging platform built for competit
 
 ```
                          ┌─────────────────┐
-                         │ React Frontend  │  (Port 5173 - User Dashboard & Auth Context)
+                         │ React Frontend  │  (Port 5173 - Language Selector: C++, Python, Java)
                          └────────┬────────┘
                                   │ HTTP REST (Authorization: Bearer <JWT>)
                                   ▼
                          ┌─────────────────┐
-                         │ FastAPI Backend │  (Port 8000 - /users/me/stats, /auth/*, 100KB Cap)
+                         │ FastAPI Backend │  (Port 8000 - /submissions/, /users/me/stats)
                          └───────┬─────┬───┘
                                  │     │
                               SQL│     │ enqueue (xadd with MAXLEN ~ 10000)
@@ -27,13 +27,13 @@ A secure, scalable remote code execution and judging platform built for competit
                               │            ▼
                               │     ┌──────────────┐
                               │     │ Python Worker│  (Atomic DB Claim: QUEUED -> COMPILING)
-                              │     │  Container   │  (XAUTOCLAIM & Stale Job Recovery)
+                              │     │  Container   │  (Language Strategy: C++, Python, Java)
                               │     └──────┬───────┘
                               │            │
                               │            ▼
                               │     ┌──────────────┐
                               │     │ Docker       │  (Fresh container per testcase)
-                              │     │ Sandbox      │  (--network none, --read-only, --user 1000:1000)
+                              │     │ Sandbox      │  (gdg-runner: g++, python3, openjdk21)
                               │     └──────┬───────┘
                               │            │
                               └────────────┘
@@ -41,18 +41,19 @@ A secure, scalable remote code execution and judging platform built for competit
 
 ---
 
-## User Statistics Endpoints (Phase 6.3)
+## Supported Languages (Phase 6.4)
 
-| Method | Endpoint | Description | Auth Required | Response |
-|--------|----------|-------------|---------------|----------|
-| `GET` | `/users/me/stats` | Aggregated user solver metrics, difficulty ratios, and verdict counts | Yes (Bearer Token) | `UserStatsResponse` |
-| `GET` | `/users/me/submissions` | Paginated submission history belonging strictly to current user | Yes (Bearer Token) | `SubmissionListResponse` |
+| Language | Canonical Name | Compiler / Validation | Execution Command | Time Limit Multiplier |
+|----------|----------------|-----------------------|-------------------|-----------------------|
+| C++ (g++ 13) | `cpp` | `g++ -O3 main.cpp -o main` | `/sandbox/main` | 1.0x |
+| Python (3.11) | `python` | `python3 -m py_compile main.py` | `python3 /sandbox/main.py` | 2.0x |
+| Java (OpenJDK 21) | `java` | `javac Main.java` | `java -Xmx256m -cp /sandbox Main` | 2.0x |
 
 ---
 
 ## Quick Start (Docker Compose)
 
-1. **Build Runner Image**:
+1. **Build Multi-Language Runner Image**:
    ```bash
    docker build -t gdg-runner:latest docker/runner
    ```
@@ -71,10 +72,10 @@ A secure, scalable remote code execution and judging platform built for competit
 
 ## Automated Test Suite
 
-Run the complete 44-test suite locally:
+Run the complete 48-test suite locally:
 
 ```bash
 .venv/bin/python3 -m unittest discover -s tests -v
 ```
 
-All 44 tests pass cleanly.
+All 48 tests pass cleanly.

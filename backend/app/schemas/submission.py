@@ -8,18 +8,22 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class SubmissionCreate(BaseModel):
-    """Schema for submitting C++ solution."""
+    """Schema for submitting C++, Python, or Java solution."""
     problem_id: int = Field(..., description="ID of the problem being solved")
-    language: str = Field(..., description="Programming language (e.g. cpp)")
-    source_code: str = Field(..., description="C++ source code string")
+    language: str = Field(..., description="Programming language (cpp, python, java)")
+    source_code: str = Field(..., description="Source code string")
 
     @field_validator("language")
     @classmethod
     def validate_language(cls, v: str) -> str:
         v_clean = v.strip().lower()
-        if v_clean not in ["cpp", "c++"]:
-            raise ValueError("Unsupported language. Only 'cpp' is currently supported.")
-        return "cpp"
+        if v_clean in ["cpp", "c++"]:
+            return "cpp"
+        if v_clean in ["python", "python3", "py"]:
+            return "python"
+        if v_clean in ["java"]:
+            return "java"
+        raise ValueError("Unsupported language. Supported languages: 'cpp', 'python', 'java'.")
 
     @field_validator("source_code")
     @classmethod
@@ -48,7 +52,6 @@ def sanitize_error_message(status: str, raw_msg: Optional[str]) -> Optional[str]
         return None
 
     if status == "COMPILATION_ERROR":
-        # Keep clean compiler error lines, but remove host paths
         if raw_msg:
             lines = [line for line in raw_msg.splitlines() if not line.startswith("Compilation failed inside Docker")]
             clean_text = "\n".join(lines).strip()

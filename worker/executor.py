@@ -2,7 +2,7 @@
 Executor Module.
 
 Defines the Executor Protocol interface, LocalExecutor for local testing,
-and DockerExecutor for hardened containerized execution.
+and DockerExecutor for hardened multi-language containerized execution (C++, Python, Java).
 """
 
 import json
@@ -23,7 +23,7 @@ from sandbox_policy import DEFAULT_SANDBOX_POLICY, ExecutionLimits, SandboxPolic
 @dataclass(frozen=True)
 class ExecutionResult:
     """
-    Structured outcome of binary execution against a single testcase.
+    Structured outcome of binary / script execution against a single testcase.
     """
     stdout: str
     stderr: str
@@ -39,7 +39,7 @@ class ExecutionResult:
 
 class Executor(ABC):
     """
-    Abstract Protocol interface for running compiled binaries.
+    Abstract Protocol interface for running compiled binaries / scripts.
     """
 
     @abstractmethod
@@ -47,10 +47,11 @@ class Executor(ABC):
         self,
         binary_path: Union[str, Path],
         stdin_data: str,
-        limits: Optional[ExecutionLimits] = None
+        limits: Optional[ExecutionLimits] = None,
+        language: str = "cpp",
     ) -> ExecutionResult:
         """
-        Executes a compiled binary with stdin data under specified resource limits.
+        Executes code with stdin data under specified resource limits and language settings.
         """
         pass
 
@@ -58,22 +59,21 @@ class Executor(ABC):
 class LocalExecutor(Executor):
     """
     Development and testing executor running binaries directly on host via subprocess.
-    
-    WARNING: LocalExecutor is dev/test infrastructure ONLY and MUST NOT be exposed
-    directly through production submission API endpoints.
     """
 
     def run(
         self,
         binary_path: Union[str, Path],
         stdin_data: str,
-        limits: Optional[ExecutionLimits] = None
+        limits: Optional[ExecutionLimits] = None,
+        language: str = "cpp",
     ) -> ExecutionResult:
         if limits is None:
             limits = ExecutionLimits()
 
         bin_path = Path(binary_path).resolve()
         cwd = bin_path.parent
+        lang = language.lower()
 
         if not bin_path.exists():
             return ExecutionResult(
@@ -83,8 +83,18 @@ class LocalExecutor(Executor):
                 duration_ms=0.0,
                 timed_out=False,
                 output_limit_exceeded=False,
-                error_message=f"Binary path '{bin_path}' does not exist.",
+                error_message=f"Target path '{bin_path}' does not exist.",
             )
+
+        if lang == "python":
+            exec_cmd = ["python3", str(bin_path)]
+            timeout_s = limits.timeout_s * 2.0
+        elif lang == "java":
+            exec_cmd = ["java", "-Xmx256m", "-cp", str(cwd), "Main"]
+            timeout_s = limits.timeout_s * 2.0
+        else:
+            exec_cmd = [str(bin_path)]
+            timeout_s = limits.timeout_s
 
         stdout_chunks = []
         stderr_chunks = []
@@ -96,7 +106,7 @@ class LocalExecutor(Executor):
 
         try:
             proc = subprocess.Popen(
-                [str(bin_path)],
+                exec_cmd,
                 cwd=cwd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
@@ -180,7 +190,7 @@ class LocalExecutor(Executor):
         timed_out = False
 
         try:
-            proc.wait(timeout=limits.timeout_s)
+            proc.wait(timeout=timeout_s)
         except subprocess.TimeoutExpired:
             timed_out = True
             kill_process_group()
@@ -206,7 +216,7 @@ class LocalExecutor(Executor):
 
         err_msg: Optional[str] = None
         if timed_out:
-            err_msg = f"Execution timed out after {limits.timeout_s} seconds."
+            err_msg = f"Execution timed out after {timeout_s} seconds."
         elif output_exceeded.is_set():
             err_msg = f"Output size limit ({limits.max_output_bytes} bytes) exceeded."
         elif sig_num is not None:
@@ -226,10 +236,7 @@ class LocalExecutor(Executor):
 
 class DockerExecutor(Executor):
     """
-    Hardened Docker-based container executor.
-    
-    Launches a fresh container per testcase with strict security options
-    (--network none, --read-only, --tmpfs, --memory, --cpus, --pids-limit, --cap-drop ALL).
+    Hardened Docker-based container executor supporting C++, Python, and Java.
     """
 
     def __init__(
@@ -246,13 +253,15 @@ class DockerExecutor(Executor):
         self,
         binary_path: Union[str, Path],
         stdin_data: str,
-        limits: Optional[ExecutionLimits] = None
+        limits: Optional[ExecutionLimits] = None,
+        language: str = "cpp",
     ) -> ExecutionResult:
         if limits is None:
             limits = self.policy.execution_limits
 
         bin_path = Path(binary_path).resolve()
         ws_dir = bin_path.parent
+        lang = language.lower()
 
         if not bin_path.exists():
             return ExecutionResult(
@@ -262,10 +271,9 @@ class DockerExecutor(Executor):
                 duration_ms=0.0,
                 timed_out=False,
                 output_limit_exceeded=False,
-                error_message=f"Compiled binary '{bin_path}' not found.",
+                error_message=f"Target file '{bin_path}' not found.",
             )
 
-        # Unique container name: judge-{submission_id}-{test_index}-{uuid}
         unique_id = uuid.uuid4().hex[:8]
         container_name = f"judge-{self.submission_id}-{self.test_index}-{unique_id}"
 
@@ -275,7 +283,18 @@ class DockerExecutor(Executor):
             workspace_dir=ws_dir,
             mount_read_only=True,
         )
-        full_cmd = docker_args + [self.policy.runner_image, "/sandbox/main"]
+
+        if lang == "python":
+            exec_args = [self.policy.runner_image, "python3", "/sandbox/main.py"]
+            timeout_s = limits.timeout_s * 2.0
+        elif lang == "java":
+            exec_args = [self.policy.runner_image, "java", "-Xmx256m", "-cp", "/sandbox", "Main"]
+            timeout_s = limits.timeout_s * 2.0
+        else:  # cpp
+            exec_args = [self.policy.runner_image, "/sandbox/main"]
+            timeout_s = limits.timeout_s
+
+        full_cmd = docker_args + exec_args
 
         stdout_chunks = []
         stderr_chunks = []
@@ -285,7 +304,6 @@ class DockerExecutor(Executor):
         output_exceeded = threading.Event()
         lock = threading.Lock()
 
-        # Launch docker run process
         try:
             proc = subprocess.Popen(
                 full_cmd,
@@ -371,7 +389,6 @@ class DockerExecutor(Executor):
         t_out.start()
         t_err.start()
 
-        # Send stdin to container
         if stdin_data and proc.stdin:
             try:
                 proc.stdin.write(stdin_data)
@@ -388,7 +405,7 @@ class DockerExecutor(Executor):
         timed_out = False
 
         try:
-            proc.wait(timeout=limits.timeout_s)
+            proc.wait(timeout=timeout_s)
         except subprocess.TimeoutExpired:
             timed_out = True
             kill_container()
@@ -409,12 +426,10 @@ class DockerExecutor(Executor):
         else:
             ret_code = 137 if timed_out else 125
 
-        # Check Docker CLI exit code 125 (Docker system launch failure)
         is_system_error = (ret_code == 125)
         oom_killed = False
 
         if not is_system_error:
-            # Perform container inspection for OOMKilled flag before container removal
             oom_killed = self._inspect_oom_killed(container_name)
 
         sig_num: Optional[int] = None
@@ -427,7 +442,7 @@ class DockerExecutor(Executor):
         if is_system_error:
             err_msg = f"Docker daemon failure (exit code {ret_code}): {full_stderr.strip()}"
         elif timed_out:
-            err_msg = f"Execution timed out after {limits.timeout_s} seconds."
+            err_msg = f"Execution timed out after {timeout_s} seconds."
         elif oom_killed:
             err_msg = "Execution exceeded memory limit (OOMKilled)."
         elif output_exceeded.is_set():
@@ -449,11 +464,9 @@ class DockerExecutor(Executor):
                 error_message=err_msg,
             )
         finally:
-            # Strict container cleanup in finally block
             self._cleanup_container(container_name)
 
     def _inspect_oom_killed(self, container_name: str) -> bool:
-        """Runs docker inspect to check if the container was OOMKilled."""
         try:
             res = subprocess.run(
                 ["docker", "inspect", "--format", "{{.State.OOMKilled}}", container_name],
@@ -470,7 +483,6 @@ class DockerExecutor(Executor):
         return False
 
     def _cleanup_container(self, container_name: str) -> None:
-        """Removes the execution container."""
         try:
             subprocess.run(
                 ["docker", "rm", "-f", container_name],

@@ -31,7 +31,7 @@ from app.models.submission import Submission, SubmissionStatus, TERMINAL_STATUSE
 from app.models.testcase import TestCase
 
 from comparator import OutputComparator
-from compiler import compile_cpp
+from compiler import compile_code
 from executor import DockerExecutor
 from judge import Judge, JudgeResult
 from sandbox_policy import DEFAULT_SANDBOX_POLICY, CompileLimits, ExecutionLimits
@@ -176,7 +176,7 @@ class Worker:
                 logger.info(f"Submission '{submission_id}' is already terminal ({sub.status}). ACK job.")
                 return True
 
-            # 3. PRIORITY 3 FIX: Strictly enforce Docker availability. NEVER fallback to LocalExecutor!
+            # 3. Enforce Docker availability
             if not is_docker_available():
                 logger.error(f"Docker is unavailable on worker host! Cannot process submission '{submission_id}' safely.")
                 self._update_submission_result(
@@ -233,8 +233,8 @@ class Worker:
 
             judge_tcs = [{"input": tc.input, "expected": tc.expected_output} for tc in testcases]
 
-            # 6. Instantiate DockerExecutor (ONLY DockerExecutor for production judging)
-            logger.info(f"Executing submission '{submission_id}' via Docker Sandbox Engine")
+            # 6. Instantiate DockerExecutor for production judging
+            logger.info(f"Executing submission '{submission_id}' ({sub.language}) via Docker Sandbox Engine")
             executor = DockerExecutor(
                 policy=DEFAULT_SANDBOX_POLICY, submission_id=submission_id, test_index=0
             )
@@ -256,11 +256,11 @@ class Worker:
                 submission_id=submission_id,
                 source_code=sub.source_code,
                 testcases=judge_tcs,
+                language=sub.language or "cpp",
                 compile_limits=comp_limits,
                 execution_limits=exec_limits,
             )
 
-            # Convert testcase results into safe summary dictionaries for Phase 5 readiness
             tc_summary_list = [
                 {
                     "testcase_index": tc_res.testcase_index,
@@ -322,7 +322,6 @@ class Worker:
         Args:
             poll_once: If True, exits after single queue drain (useful for tests).
         """
-        # Ensure database tables exist on worker startup (Priority 7)
         try:
             init_db()
         except Exception as ex:
@@ -335,10 +334,8 @@ class Worker:
 
         while True:
             try:
-                # Reclaim abandoned stream messages first
                 self.reclaim_abandoned_stream_messages()
 
-                # Read pending or new stream messages
                 response = self.redis_client.xreadgroup(
                     groupname=self.group_name,
                     consumername=self.consumer_name,

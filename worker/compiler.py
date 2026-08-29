@@ -1,8 +1,8 @@
 """
-C++ Compiler Module.
+Multi-Language Compiler / Syntax Checker Module.
 
-Handles compilation of C++ source files into executable binaries locally or
-inside a hardened Docker container using g++.
+Handles compilation & syntax validation of C++, Python, and Java source files locally or
+inside a hardened Docker container.
 """
 
 import os
@@ -36,21 +36,19 @@ class CompileResult:
     error_message: Optional[str] = None
 
 
-def compile_cpp_docker(
+def compile_code_docker(
     workspace_dir: Union[str, Path],
+    language: str = "cpp",
     policy: Optional[SandboxPolicy] = None,
     limits: Optional[CompileLimits] = None,
 ) -> CompileResult:
     """
-    Compiles /sandbox/source.cpp into /sandbox/main inside a Docker container.
+    Compiles or syntax-checks source code inside a Docker container.
 
-    Args:
-        workspace_dir: Host directory path containing source.cpp.
-        policy: Sandbox policy configuring security flags and runner image.
-        limits: Compile limits (timeout and output cap).
-
-    Returns:
-        CompileResult detailing success, stdout, stderr, timing, and errors.
+    Supported languages:
+    - cpp: g++ -O3 /sandbox/source.cpp -o /sandbox/main
+    - python: python3 -m py_compile /sandbox/main.py
+    - java: javac /sandbox/Main.java
     """
     if policy is None:
         policy = DEFAULT_SANDBOX_POLICY
@@ -59,22 +57,28 @@ def compile_cpp_docker(
 
     ws_path = Path(workspace_dir).resolve()
     container_name = f"judge-compile-{uuid.uuid4().hex[:12]}"
+    lang = language.lower()
 
-    # Build docker run command for compilation (mounting workspace as read-write /sandbox:rw)
+    # Build docker run command for compilation
     docker_args = policy.to_docker_args(
         container_name=container_name,
         workspace_dir=ws_path,
         mount_read_only=False,
     )
 
-    compiler_cmd = [
-        policy.runner_image,
-        "g++",
-    ] + DEFAULT_COMPILER_FLAGS + [
-        "/sandbox/source.cpp",
-        "-o",
-        "/sandbox/main",
-    ]
+    if lang == "python":
+        compiler_cmd = [policy.runner_image, "python3", "-m", "py_compile", "/sandbox/main.py"]
+        expected_target = ws_path / "main.py"
+    elif lang == "java":
+        compiler_cmd = [policy.runner_image, "javac", "/sandbox/Main.java"]
+        expected_target = ws_path / "Main.class"
+    else:  # cpp
+        compiler_cmd = [policy.runner_image, "g++"] + DEFAULT_COMPILER_FLAGS + [
+            "/sandbox/source.cpp",
+            "-o",
+            "/sandbox/main",
+        ]
+        expected_target = ws_path / "main"
 
     full_cmd = docker_args + compiler_cmd
 
@@ -83,7 +87,6 @@ def compile_cpp_docker(
     stdout_str = ""
     stderr_str = ""
     error_msg: Optional[str] = None
-    is_system_error = False
     oom_killed = False
 
     try:
@@ -102,7 +105,6 @@ def compile_cpp_docker(
 
         # Check for Docker CLI launch error (exit code 125)
         if proc.returncode == 125:
-            is_system_error = True
             error_msg = f"Docker container launch failed: {stderr_str.strip() or 'Docker CLI returned exit code 125.'}"
             return CompileResult(
                 success=False,
@@ -118,8 +120,7 @@ def compile_cpp_docker(
         # Inspect if compiler process was OOMKilled
         oom_killed = _inspect_compile_oom_killed(container_name)
 
-        binary_path = ws_path / "main"
-        success = (proc.returncode == 0) and binary_path.exists() and not oom_killed
+        success = (proc.returncode == 0) and expected_target.exists() and not oom_killed
 
         if oom_killed:
             error_msg = "Compilation failed: Compiler exceeded memory limit."
@@ -185,19 +186,29 @@ def compile_cpp_docker(
         _kill_and_remove_container(container_name)
 
 
-def compile_cpp(
+def compile_cpp_docker(
+    workspace_dir: Union[str, Path],
+    policy: Optional[SandboxPolicy] = None,
+    limits: Optional[CompileLimits] = None,
+) -> CompileResult:
+    """Backward-compatible C++ Docker compile helper."""
+    return compile_code_docker(workspace_dir=workspace_dir, language="cpp", policy=policy, limits=limits)
+
+
+def compile_code(
     source_path: Union[str, Path],
     output_path: Union[str, Path],
+    language: str = "cpp",
     limits: Optional[CompileLimits] = None,
     use_docker: bool = False,
     policy: Optional[SandboxPolicy] = None,
 ) -> CompileResult:
     """
-    Main compilation interface supporting both Docker and local execution.
+    Main compilation & syntax validation interface supporting C++, Python, and Java.
     """
     if use_docker:
         src_parent = Path(source_path).resolve().parent
-        return compile_cpp_docker(workspace_dir=src_parent, policy=policy, limits=limits)
+        return compile_code_docker(workspace_dir=src_parent, language=language, policy=policy, limits=limits)
 
     if limits is None:
         limits = CompileLimits()
@@ -205,8 +216,14 @@ def compile_cpp(
     src = Path(source_path).resolve()
     out = Path(output_path).resolve()
     cwd = src.parent
+    lang = language.lower()
 
-    cmd: List[str] = ["g++"] + DEFAULT_COMPILER_FLAGS + [str(src), "-o", str(out)]
+    if lang == "python":
+        cmd = ["python3", "-m", "py_compile", str(src)]
+    elif lang == "java":
+        cmd = ["javac", str(src)]
+    else:
+        cmd = ["g++"] + DEFAULT_COMPILER_FLAGS + [str(src), "-o", str(out)]
 
     start_time = time.monotonic()
 
@@ -224,7 +241,7 @@ def compile_cpp(
 
         stdout_str = (proc.stdout or "")[: limits.max_output_bytes]
         stderr_str = (proc.stderr or "")[: limits.max_output_bytes]
-        sanitized_stderr = stderr_str.replace(str(src), "source.cpp").replace(str(cwd), ".")
+        sanitized_stderr = stderr_str.replace(str(src), "source_file").replace(str(cwd), ".")
 
         success = (proc.returncode == 0) and out.exists()
         error_msg = f"Compilation failed with exit code {proc.returncode}." if not success else None
@@ -266,7 +283,7 @@ def compile_cpp(
             timed_out=False,
             oom_killed=False,
             is_docker_system_error=True,
-            error_message="g++ compiler binary not found on host system.",
+            error_message=f"Compiler binary for '{language}' not found on host system.",
         )
 
     except Exception as ex:
@@ -281,6 +298,23 @@ def compile_cpp(
             is_docker_system_error=True,
             error_message=f"Compilation process failure: {str(ex)}",
         )
+
+
+def compile_cpp(
+    source_path: Union[str, Path],
+    output_path: Union[str, Path],
+    limits: Optional[CompileLimits] = None,
+    use_docker: bool = False,
+    policy: Optional[SandboxPolicy] = None,
+) -> CompileResult:
+    return compile_code(
+        source_path=source_path,
+        output_path=output_path,
+        language="cpp",
+        limits=limits,
+        use_docker=use_docker,
+        policy=policy,
+    )
 
 
 def _inspect_compile_oom_killed(container_name: str) -> bool:

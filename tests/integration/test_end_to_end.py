@@ -35,28 +35,24 @@ engine = create_engine(
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
-def override_get_db():
-    db = TestingSessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-app.dependency_overrides[get_db] = override_get_db
-
-
 class TestEndToEndIntegration(unittest.TestCase):
+
+    def override_get_db(self):
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
 
     def setUp(self):
         import worker as worker_mod
         worker_mod.SessionLocal = TestingSessionLocal
 
         Base.metadata.create_all(bind=engine)
+        app.dependency_overrides[get_db] = self.override_get_db
         self.client = TestClient(app)
         self.db = TestingSessionLocal()
 
-        # Patch queue_client.enqueue_submission to mock Redis queuing for E2E unit tests
         self.patcher = patch.object(queue_client, "enqueue_submission", return_value="msg-1")
         self.mock_enqueue = self.patcher.start()
 
@@ -79,6 +75,7 @@ class TestEndToEndIntegration(unittest.TestCase):
     def tearDown(self):
         self.patcher.stop()
         self.db.close()
+        app.dependency_overrides.clear()
         Base.metadata.drop_all(bind=engine)
 
     def test_e2e_accepted_submission(self):
@@ -103,7 +100,7 @@ class TestEndToEndIntegration(unittest.TestCase):
         # Mock Docker availability to True for testing DockerExecutor flow
         with patch("worker.is_docker_available", return_value=True), \
              patch("executor.DockerExecutor.run") as mock_exec_run, \
-             patch("compiler.compile_cpp_docker") as mock_compile:
+             patch("compiler.compile_code_docker") as mock_compile:
 
             from compiler import CompileResult
             from executor import ExecutionResult
@@ -137,7 +134,7 @@ class TestEndToEndIntegration(unittest.TestCase):
         worker.redis_client = MagicMock()
 
         with patch("worker.is_docker_available", return_value=True), \
-             patch("compiler.compile_cpp_docker") as mock_compile:
+             patch("compiler.compile_code_docker") as mock_compile:
             from compiler import CompileResult
             mock_compile.return_value = CompileResult(
                 success=False, stdout="", stderr="error: 'missing_var' was not declared in this scope", duration_ms=20.0, timed_out=False, error_message="error: 'missing_var' was not declared in this scope"

@@ -14,7 +14,8 @@ interface ProblemWorkspaceProps {
   onBack: () => void;
 }
 
-const DEFAULT_STARTER_TEMPLATE = `#include <iostream>
+const STARTER_TEMPLATES: Record<string, string> = {
+  cpp: `#include <iostream>
 using namespace std;
 
 int main() {
@@ -29,7 +30,34 @@ int main() {
 
     return 0;
 }
-`;
+`,
+  python: `import sys
+
+def main():
+    # Read input from standard input
+    input_data = sys.stdin.read().split()
+    if len(input_data) >= 2:
+        a = int(input_data[0])
+        b = int(input_data[1])
+        print(a + b)
+
+if __name__ == "__main__":
+    main()
+`,
+  java: `import java.util.Scanner;
+
+public class Main {
+    public static void main(String[] args) {
+        Scanner scanner = new Scanner(System.in);
+        if (scanner.hasNextInt()) {
+            int a = scanner.nextInt();
+            int b = scanner.nextInt();
+            System.out.println(a + b);
+        }
+    }
+}
+`,
+};
 
 export const ProblemWorkspace: React.FC<ProblemWorkspaceProps> = ({
   problemId,
@@ -39,7 +67,8 @@ export const ProblemWorkspace: React.FC<ProblemWorkspaceProps> = ({
   const [loadingProblem, setLoadingProblem] = useState<boolean>(true);
   const [problemError, setProblemError] = useState<string | null>(null);
 
-  const [sourceCode, setSourceCode] = useState<string>(DEFAULT_STARTER_TEMPLATE);
+  const [language, setLanguage] = useState<string>('cpp');
+  const [sourceCode, setSourceCode] = useState<string>(STARTER_TEMPLATES['cpp']);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [activeSubmission, setActiveSubmission] = useState<SubmissionResponse | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -71,6 +100,11 @@ export const ProblemWorkspace: React.FC<ProblemWorkspaceProps> = ({
     loadProblem();
   }, [problemId]);
 
+  const handleLanguageChange = (newLang: string) => {
+    setLanguage(newLang);
+    setSourceCode(STARTER_TEMPLATES[newLang] || STARTER_TEMPLATES['cpp']);
+  };
+
   const handleSubmit = async () => {
     if (!sourceCode.trim() || submitting) return;
 
@@ -84,7 +118,7 @@ export const ProblemWorkspace: React.FC<ProblemWorkspaceProps> = ({
     setActiveSubmission(null);
 
     try {
-      const initialSub = await submitCode(problemId, sourceCode, 'cpp');
+      const initialSub = await submitCode(problemId, sourceCode, language);
       setActiveSubmission(initialSub);
 
       if (isTerminalStatus(initialSub.status)) {
@@ -155,6 +189,31 @@ export const ProblemWorkspace: React.FC<ProblemWorkspaceProps> = ({
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          {/* Language Selector */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <label style={{ fontSize: '0.8rem', color: '#94a3b8', fontWeight: 600 }}>Lang:</label>
+            <select
+              value={language}
+              onChange={(e) => handleLanguageChange(e.target.value)}
+              disabled={submitting}
+              style={{
+                backgroundColor: '#0b0f19',
+                color: '#f8fafc',
+                border: '1px solid #334155',
+                borderRadius: '6px',
+                padding: '0.35rem 0.65rem',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                outline: 'none',
+                cursor: 'pointer',
+              }}
+            >
+              <option value="cpp">C++ (g++ 13)</option>
+              <option value="python">Python (3.11)</option>
+              <option value="java">Java (OpenJDK 21)</option>
+            </select>
+          </div>
+
           <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Time: <strong style={{ color: '#38bdf8' }}>{problem.time_limit_ms} ms</strong></span>
           <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Memory: <strong style={{ color: '#38bdf8' }}>{problem.memory_limit_mb} MB</strong></span>
           <button
@@ -254,7 +313,7 @@ export const ProblemWorkspace: React.FC<ProblemWorkspaceProps> = ({
                   <StatusBadge status={activeSubmission.status} />
                 </div>
                 <span style={{ fontSize: '0.75rem', color: '#64748b', fontFamily: 'monospace' }}>
-                  ID: {activeSubmission.id.slice(0, 8)}...
+                  ID: {activeSubmission.id.slice(0, 8)}... ({activeSubmission.language.toUpperCase()})
                 </span>
               </div>
 
@@ -309,7 +368,7 @@ export const ProblemWorkspace: React.FC<ProblemWorkspaceProps> = ({
             value={sourceCode}
             onChange={setSourceCode}
             disabled={submitting}
-            onResetTemplate={() => setSourceCode(DEFAULT_STARTER_TEMPLATE)}
+            onResetTemplate={() => setSourceCode(STARTER_TEMPLATES[language] || STARTER_TEMPLATES['cpp'])}
           />
         </div>
       </div>

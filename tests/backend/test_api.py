@@ -94,15 +94,19 @@ class TestFastAPIEndpoints(unittest.TestCase):
         self.assertEqual(response.status_code, 404)
 
     def test_create_submission_validation(self):
-        res1 = self.client.post("/submissions/", json={"problem_id": 1, "language": "python", "source_code": "print(1)"})
+        # Invalid language (e.g. rust) -> Pydantic validator returns 422
+        res1 = self.client.post("/submissions/", json={"problem_id": 1, "language": "rust", "source_code": "fn main(){}"})
         self.assertIn(res1.status_code, [400, 422])
 
+        # Empty source code -> Pydantic validator returns 422
         res2 = self.client.post("/submissions/", json={"problem_id": 1, "language": "cpp", "source_code": ""})
         self.assertIn(res2.status_code, [400, 422])
 
+        # Nonexistent problem -> 404
         res3 = self.client.post("/submissions/", json={"problem_id": 999, "language": "cpp", "source_code": "int main(){}"})
         self.assertEqual(res3.status_code, 404)
 
+        # Exceeds 64 KB limit in source code validation -> 422
         large_code = "int main() { " + ("//" * 35000) + " }"
         res4 = self.client.post("/submissions/", json={"problem_id": 1, "language": "cpp", "source_code": large_code})
         self.assertIn(res4.status_code, [400, 422])

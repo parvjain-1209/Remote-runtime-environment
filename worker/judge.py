@@ -1,8 +1,8 @@
 """
 Judge Orchestrator Module.
 
-Coordinates workspace setup, compilation, binary execution via Executor interface,
-output comparison, and status verdict determination.
+Coordinates workspace setup, multi-language compilation/syntax-check,
+execution via Executor interface, output comparison, and verdict determination.
 """
 
 import sys
@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
 from app.models.submission import SubmissionStatus
 
 from comparator import OutputComparator
-from compiler import CompileResult, compile_cpp
+from compiler import CompileResult, compile_code
 from executor import ExecutionResult, Executor
 from sandbox_policy import DEFAULT_SANDBOX_POLICY, CompileLimits, ExecutionLimits, SandboxPolicy
 from workspace import SubmissionWorkspace, WorkspaceError
@@ -49,7 +49,7 @@ class JudgeResult:
 
 class Judge:
     """
-    Orchestrates the evaluation pipeline for participant submissions.
+    Orchestrates the evaluation pipeline for participant submissions (C++, Python, Java).
     Uses Dependency Injection for the Executor interface.
     """
 
@@ -70,18 +70,20 @@ class Judge:
         submission_id: str,
         source_code: str,
         testcases: List[Dict[str, str]],
+        language: str = "cpp",
         compile_limits: Optional[CompileLimits] = None,
         execution_limits: Optional[ExecutionLimits] = None,
     ) -> JudgeResult:
         """
-        Evaluates a C++ source code submission against a set of testcases.
+        Evaluates a source code submission against a set of testcases.
 
         Args:
             submission_id: Unique submission identifier.
-            source_code: Participant C++ code string.
+            source_code: Participant code string.
             testcases: List of dicts with 'input' and 'expected' keys.
+            language: Programming language ('cpp', 'python', 'java').
             compile_limits: Time and output limits for compiler.
-            execution_limits: Time and output limits for binary runner.
+            execution_limits: Time and output limits for runner.
 
         Returns:
             Structured JudgeResult detailing overall status and testcase outcomes.
@@ -93,11 +95,12 @@ class Judge:
 
         start_time = time.monotonic()
         testcase_results: List[TestCaseResult] = []
+        lang = language.lower()
 
         with SubmissionWorkspace() as workspace:
             # 1. Write source code to workspace
             try:
-                workspace.write_source(source_code)
+                workspace.write_source(source_code, language=lang)
             except WorkspaceError as we:
                 duration_ms = (time.monotonic() - start_time) * 1000.0
                 return JudgeResult(
@@ -109,10 +112,14 @@ class Judge:
                     error_message=str(we),
                 )
 
-            # 2. Compile source code (inside Docker if use_docker_compiler is True)
-            compile_res = compile_cpp(
-                source_path=workspace.source_path,
-                output_path=workspace.binary_path,
+            src_p = workspace.get_source_path(lang)
+            bin_p = workspace.get_binary_path(lang)
+
+            # 2. Compile / syntax check source code
+            compile_res = compile_code(
+                source_path=src_p,
+                output_path=bin_p,
+                language=lang,
                 limits=compile_limits,
                 use_docker=self.use_docker_compiler,
                 policy=self.policy,
@@ -140,7 +147,7 @@ class Judge:
                     error_message=compile_res.error_message or "Compilation failed.",
                 )
 
-            # 3. Execute compiled binary against testcases
+            # 3. Execute target file against testcases
             overall_status = SubmissionStatus.ACCEPTED
 
             for idx, tc in enumerate(testcases):
@@ -148,9 +155,10 @@ class Judge:
                 expected_output = tc.get("expected", "")
 
                 exec_res = self.executor.run(
-                    binary_path=workspace.binary_path,
+                    binary_path=bin_p,
                     stdin_data=stdin_data,
                     limits=execution_limits,
+                    language=lang,
                 )
 
                 # Determine testcase verdict with strict priority
