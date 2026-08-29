@@ -46,7 +46,6 @@ export const ProblemWorkspace: React.FC<ProblemWorkspaceProps> = ({
 
   const pollCleanupRef = useRef<(() => void) | null>(null);
 
-  // Clean up polling loop when unmounted
   useEffect(() => {
     return () => {
       if (pollCleanupRef.current) {
@@ -75,7 +74,6 @@ export const ProblemWorkspace: React.FC<ProblemWorkspaceProps> = ({
   const handleSubmit = async () => {
     if (!sourceCode.trim() || submitting) return;
 
-    // Clear previous poll loop if active
     if (pollCleanupRef.current) {
       pollCleanupRef.current();
       pollCleanupRef.current = null;
@@ -94,7 +92,6 @@ export const ProblemWorkspace: React.FC<ProblemWorkspaceProps> = ({
         return;
       }
 
-      // Start live polling loop
       const cleanup = pollSubmission(
         initialSub.id,
         (updatedSub) => {
@@ -134,22 +131,32 @@ export const ProblemWorkspace: React.FC<ProblemWorkspaceProps> = ({
     );
   }
 
+  const getDifficultyColor = (diff: string) => {
+    const d = (diff || 'Easy').toLowerCase();
+    if (d === 'medium') return '#fbbf24';
+    if (d === 'hard') return '#f87171';
+    return '#34d399';
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: 'calc(100vh - 120px)' }}>
       {/* Header bar */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #1e293b', paddingBottom: '0.75rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #1e293b', paddingBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <button className="btn-secondary" onClick={onBack} style={{ padding: '0.35rem 0.75rem', fontSize: '0.85rem' }}>
             ← Problems
           </button>
-          <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#f8fafc' }}>
+          <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#f8fafc' }}>
             #{problem.id}. {problem.title}
           </h2>
+          <span style={{ fontSize: '0.75rem', fontWeight: 600, color: getDifficultyColor(problem.difficulty), backgroundColor: 'rgba(15, 23, 42, 0.8)', padding: '0.15rem 0.55rem', borderRadius: '9999px', border: '1px solid #334155' }}>
+            {problem.difficulty}
+          </span>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Time Limit: <strong style={{ color: '#38bdf8' }}>{problem.time_limit_ms} ms</strong></span>
-          <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Memory Limit: <strong style={{ color: '#38bdf8' }}>{problem.memory_limit_mb} MB</strong></span>
+          <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Time: <strong style={{ color: '#38bdf8' }}>{problem.time_limit_ms} ms</strong></span>
+          <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Memory: <strong style={{ color: '#38bdf8' }}>{problem.memory_limit_mb} MB</strong></span>
           <button
             className="btn-primary"
             onClick={handleSubmit}
@@ -174,7 +181,18 @@ export const ProblemWorkspace: React.FC<ProblemWorkspaceProps> = ({
         {/* Left Panel: Problem Statement & Results */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', overflowY: 'auto', paddingRight: '0.5rem' }}>
           <div className="card">
-            <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#f8fafc', marginBottom: '0.75rem' }}>Description</h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+              <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#f8fafc' }}>Description</h3>
+              {problem.tags && (
+                <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                  {problem.tags.split(',').map((tag, idx) => (
+                    <span key={idx} style={{ backgroundColor: '#1e293b', color: '#94a3b8', fontSize: '0.7rem', padding: '0.1rem 0.45rem', borderRadius: '4px' }}>
+                      {tag.trim()}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
             <p style={{ color: '#cbd5e1', fontSize: '0.9rem', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
               {problem.description}
             </p>
@@ -183,14 +201,14 @@ export const ProblemWorkspace: React.FC<ProblemWorkspaceProps> = ({
           {problem.input_description && (
             <div className="card">
               <h4 style={{ fontSize: '0.9rem', fontWeight: 600, color: '#94a3b8', marginBottom: '0.5rem' }}>Input Format</h4>
-              <p style={{ color: '#cbd5e1', fontSize: '0.875rem' }}>{problem.input_description}</p>
+              <p style={{ color: '#cbd5e1', fontSize: '0.875rem', whiteSpace: 'pre-wrap' }}>{problem.input_description}</p>
             </div>
           )}
 
           {problem.output_description && (
             <div className="card">
               <h4 style={{ fontSize: '0.9rem', fontWeight: 600, color: '#94a3b8', marginBottom: '0.5rem' }}>Output Format</h4>
-              <p style={{ color: '#cbd5e1', fontSize: '0.875rem' }}>{problem.output_description}</p>
+              <p style={{ color: '#cbd5e1', fontSize: '0.875rem', whiteSpace: 'pre-wrap' }}>{problem.output_description}</p>
             </div>
           )}
 

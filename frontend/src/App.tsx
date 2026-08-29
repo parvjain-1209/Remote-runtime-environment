@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { Navbar } from './components/Navbar';
+import { AuthProvider } from './context/AuthContext';
 import { ProblemList } from './pages/ProblemList';
 import { ProblemWorkspace } from './pages/ProblemWorkspace';
 import { SubmissionHistory } from './pages/SubmissionHistory';
 
 type ViewMode = 'problems' | 'workspace' | 'history';
 
-export const App: React.FC = () => {
+const MainApp: React.FC = () => {
   const [view, setView] = useState<ViewMode>('problems');
   const [selectedProblemId, setSelectedProblemId] = useState<number | null>(null);
 
@@ -40,6 +41,14 @@ export const App: React.FC = () => {
         )}
       </main>
     </div>
+  );
+};
+
+export const App: React.FC = () => {
+  return (
+    <AuthProvider>
+      <MainApp />
+    </AuthProvider>
   );
 };
 

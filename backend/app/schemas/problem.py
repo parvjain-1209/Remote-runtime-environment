@@ -21,6 +21,8 @@ class ProblemBase(BaseModel):
     description: str
     input_description: Optional[str] = None
     output_description: Optional[str] = None
+    difficulty: str = "Easy"
+    tags: Optional[str] = None
     time_limit_ms: int = 2000
     memory_limit_mb: int = 256
 

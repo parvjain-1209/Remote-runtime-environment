@@ -24,6 +24,11 @@ class Settings:
     stale_job_timeout_seconds: float = float(os.getenv("STALE_JOB_TIMEOUT_SECONDS", "30.0"))
     environment: str = os.getenv("ENVIRONMENT", "development")
 
+    # JWT Authentication Security Settings
+    jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "gdg-remote-runtime-secret-key-change-in-prod-2026")
+    jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
+    access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440")) # 24 hours
+
     # Workspace paths for Docker-out-of-Docker path resolution
     worker_workspace_dir: str = os.getenv("WORKER_WORKSPACE_DIR", "./runtime-workspaces")
     host_workspace_dir_raw: str = os.getenv("HOST_WORKSPACE_DIR", "")

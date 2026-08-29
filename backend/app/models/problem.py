@@ -20,6 +20,8 @@ class Problem(Base):
     description = Column(Text, nullable=False)
     input_description = Column(Text, nullable=True)
     output_description = Column(Text, nullable=True)
+    difficulty = Column(String(32), nullable=False, default="Easy")
+    tags = Column(String(255), nullable=True)
     time_limit_ms = Column(Integer, nullable=False, default=2000)
     memory_limit_mb = Column(Integer, nullable=False, default=256)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))

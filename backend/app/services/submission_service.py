@@ -22,7 +22,7 @@ class SubmissionService:
     Business logic for managing code submissions.
     """
 
-    def create_submission(self, db: Session, payload: SubmissionCreate) -> Submission:
+    def create_submission(self, db: Session, payload: SubmissionCreate, user_id: Optional[int] = None) -> Submission:
         """
         Validates problem existence, creates QUEUED submission in PostgreSQL,
         commits DB transaction, and enqueues job to Redis Stream.
@@ -48,6 +48,7 @@ class SubmissionService:
         submission = Submission(
             id=submission_id,
             problem_id=payload.problem_id,
+            user_id=user_id,
             source_code=payload.source_code,
             language=payload.language,
             status=SubmissionStatus.QUEUED.value,

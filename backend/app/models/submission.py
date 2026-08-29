@@ -44,6 +44,7 @@ class Submission(Base):
 
     id = Column(String(36), primary_key=True)
     problem_id = Column(Integer, ForeignKey("problems.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     source_code = Column(Text, nullable=False)
     language = Column(String(32), nullable=False, default="cpp")
     status = Column(String(32), nullable=False, default=SubmissionStatus.QUEUED.value, index=True)
@@ -52,7 +53,7 @@ class Submission(Base):
     memory_used_mb = Column(Float, nullable=True)
     error_message = Column(Text, nullable=True)
     
-    # Per-testcase safe status metadata for Phase 5 readiness (JSON list of dicts)
+    # Per-testcase safe status metadata (JSON list of dicts)
     testcase_results = Column(JSON, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
@@ -60,6 +61,7 @@ class Submission(Base):
     completed_at = Column(DateTime(timezone=True), nullable=True)
 
     problem = relationship("Problem", back_populates="submissions")
+    user = relationship("User", back_populates="submissions")
 
     def __repr__(self) -> str:
         return f"<Submission(id='{self.id}', problem_id={self.problem_id}, status='{self.status}')>"

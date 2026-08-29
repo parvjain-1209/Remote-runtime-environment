@@ -1,14 +1,40 @@
 import {
   HealthResponse,
+  LoginRequest,
   ProblemDetail,
   ProblemListItem,
+  RegisterRequest,
   SubmissionListResponse,
   SubmissionResponse,
   SubmissionStatus,
+  TokenResponse,
+  User,
 } from '../types';
 
 const API_BASE_URL =
   (import.meta.env.VITE_API_BASE_URL as string) || 'http://localhost:8000';
+
+const TOKEN_KEY = 'gdg_oj_jwt_token';
+
+export function getStoredToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function setStoredToken(token: string): void {
+  localStorage.setItem(TOKEN_KEY, token);
+}
+
+export function removeStoredToken(): void {
+  localStorage.removeItem(TOKEN_KEY);
+}
+
+function getAuthHeaders(): Record<string, string> {
+  const token = getStoredToken();
+  if (token) {
+    return { Authorization: `Bearer ${token}` };
+  }
+  return {};
+}
 
 const TERMINAL_STATUSES: Set<SubmissionStatus> = new Set([
   'ACCEPTED',
@@ -20,6 +46,56 @@ const TERMINAL_STATUSES: Set<SubmissionStatus> = new Set([
   'RUNTIME_ERROR',
   'SYSTEM_ERROR',
 ]);
+
+// Auth Endpoints
+export async function registerUser(req: RegisterRequest): Promise<TokenResponse> {
+  const res = await fetch(`${API_BASE_URL}/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || `Registration failed with status ${res.status}`);
+  }
+
+  const data: TokenResponse = await res.json();
+  setStoredToken(data.access_token);
+  return data;
+}
+
+export async function loginUser(req: LoginRequest): Promise<TokenResponse> {
+  const res = await fetch(`${API_BASE_URL}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || `Login failed with status ${res.status}`);
+  }
+
+  const data: TokenResponse = await res.json();
+  setStoredToken(data.access_token);
+  return data;
+}
+
+export async function fetchCurrentUser(): Promise<User> {
+  const headers = getAuthHeaders();
+  if (!headers.Authorization) {
+    throw new Error('No auth token stored');
+  }
+
+  const res = await fetch(`${API_BASE_URL}/auth/me`, { headers });
+  if (!res.ok) {
+    removeStoredToken();
+    throw new Error('Session expired or invalid token');
+  }
+
+  return res.json();
+}
 
 export async function fetchHealth(): Promise<HealthResponse> {
   const res = await fetch(`${API_BASE_URL}/health`);
@@ -50,14 +126,17 @@ export async function fetchProblemDetail(id: number): Promise<ProblemDetail> {
 
 export async function submitCode(
   problemId: number,
-  sourceCode: str,
+  sourceCode: string,
   language: string = 'cpp'
 ): Promise<SubmissionResponse> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...getAuthHeaders(),
+  };
+
   const res = await fetch(`${API_BASE_URL}/submissions/`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify({
       problem_id: problemId,
       language: language,
@@ -80,7 +159,9 @@ export async function submitCode(
 }
 
 export async function fetchSubmission(id: string): Promise<SubmissionResponse> {
-  const res = await fetch(`${API_BASE_URL}/submissions/${id}`);
+  const res = await fetch(`${API_BASE_URL}/submissions/${id}`, {
+    headers: getAuthHeaders(),
+  });
   if (!res.ok) {
     throw new Error(`Failed to fetch submission ${id} (${res.status})`);
   }
@@ -99,7 +180,9 @@ export async function fetchSubmissions(
   params.append('limit', limit.toString());
   params.append('offset', offset.toString());
 
-  const res = await fetch(`${API_BASE_URL}/submissions/?${params.toString()}`);
+  const res = await fetch(`${API_BASE_URL}/submissions/?${params.toString()}`, {
+    headers: getAuthHeaders(),
+  });
   if (!res.ok) {
     throw new Error(`Failed to fetch submission history (${res.status})`);
   }
@@ -110,10 +193,6 @@ export function isTerminalStatus(status: SubmissionStatus): boolean {
   return TERMINAL_STATUSES.has(status);
 }
 
-/**
- * Polls a submission ID until terminal status is reached or max attempts exceeded.
- * Returns an unbind/cancel function to prevent memory leaks or state updates after unmount.
- */
 export function pollSubmission(
   id: string,
   onUpdate: (sub: SubmissionResponse) => void,
@@ -136,14 +215,13 @@ export function pollSubmission(
       onUpdate(sub);
 
       if (isTerminalStatus(sub.status) || attempts >= maxAttempts) {
-        return; // Terminal state reached or timed out, stop polling loop
+        return;
       }
 
       timerId = window.setTimeout(runPoll, intervalMs);
     } catch (err: any) {
       if (isCancelled) return;
       onError(err instanceof Error ? err : new Error(String(err)));
-      // Retry poll even on transient network glitch if attempts under max
       if (attempts < maxAttempts) {
         timerId = window.setTimeout(runPoll, intervalMs * 2);
       }

@@ -7,8 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.core.auth import get_optional_current_user
 from app.database import get_db
 from app.models.submission import Submission
+from app.models.user import User
 from app.schemas.submission import (
     SubmissionCreate,
     SubmissionListResponse,
@@ -24,11 +26,14 @@ router = APIRouter(prefix="/submissions", tags=["Submissions"])
 def create_submission(
     payload: SubmissionCreate,
     db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user),
 ):
     """
     Creates a new code submission, stores it in PostgreSQL, and enqueues job to Redis Stream.
+    If request contains a valid Bearer token, attaches user_id to submission.
     """
-    submission = submission_service.create_submission(db=db, payload=payload)
+    user_id = current_user.id if current_user else None
+    submission = submission_service.create_submission(db=db, payload=payload, user_id=user_id)
     
     # Build sanitized response
     return SubmissionResponse(

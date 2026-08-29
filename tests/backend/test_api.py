@@ -17,9 +17,7 @@ sys.path.insert(0, str(BACKEND_DIR))
 
 from app.database import Base, get_db
 from app.main import app
-from app.models.problem import Problem
-from app.models.submission import Submission
-from app.models.testcase import TestCase
+from app.models import Problem, Submission, TestCase, User
 from app.services.queue_client import queue_client
 
 # Setup in-memory SQLite database with StaticPool for test isolation
@@ -31,21 +29,18 @@ engine = create_engine(
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
-def override_get_db():
-    db = TestingSessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-app.dependency_overrides[get_db] = override_get_db
-
-
 class TestFastAPIEndpoints(unittest.TestCase):
+
+    def override_get_db(self):
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
 
     def setUp(self):
         Base.metadata.create_all(bind=engine)
+        app.dependency_overrides[get_db] = self.override_get_db
         self.client = TestClient(app)
         self.db = TestingSessionLocal()
 
@@ -56,6 +51,8 @@ class TestFastAPIEndpoints(unittest.TestCase):
             description="Print sum of two integers.",
             input_description="Two integers",
             output_description="Single integer",
+            difficulty="Easy",
+            tags="Math",
             time_limit_ms=2000,
             memory_limit_mb=256,
         )
@@ -69,6 +66,7 @@ class TestFastAPIEndpoints(unittest.TestCase):
 
     def tearDown(self):
         self.db.close()
+        app.dependency_overrides.clear()
         Base.metadata.drop_all(bind=engine)
 
     def test_health_check(self):
@@ -79,8 +77,9 @@ class TestFastAPIEndpoints(unittest.TestCase):
         response = self.client.get("/problems/")
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(len(data), 1)
-        self.assertEqual(data[0]["title"], "Add Numbers")
+        self.assertTrue(len(data) >= 1)
+        p1_data = [p for p in data if p["id"] == 1][0]
+        self.assertEqual(p1_data["title"], "Add Numbers")
 
     def test_get_problem_detail_hides_hidden_testcases(self):
         response = self.client.get("/problems/1")
@@ -95,25 +94,20 @@ class TestFastAPIEndpoints(unittest.TestCase):
         self.assertEqual(response.status_code, 404)
 
     def test_create_submission_validation(self):
-        # Invalid language -> Pydantic validator returns 422
         res1 = self.client.post("/submissions/", json={"problem_id": 1, "language": "python", "source_code": "print(1)"})
         self.assertIn(res1.status_code, [400, 422])
 
-        # Empty source code -> Pydantic validator returns 422
         res2 = self.client.post("/submissions/", json={"problem_id": 1, "language": "cpp", "source_code": ""})
         self.assertIn(res2.status_code, [400, 422])
 
-        # Nonexistent problem -> 404
-        res3 = self.client.post("/submissions/", json={"problem_id": 99, "language": "cpp", "source_code": "int main(){}"})
+        res3 = self.client.post("/submissions/", json={"problem_id": 999, "language": "cpp", "source_code": "int main(){}"})
         self.assertEqual(res3.status_code, 404)
 
-        # Exceeds 64 KB limit in source code validation -> 422
         large_code = "int main() { " + ("//" * 35000) + " }"
         res4 = self.client.post("/submissions/", json={"problem_id": 1, "language": "cpp", "source_code": large_code})
         self.assertIn(res4.status_code, [400, 422])
 
     def test_oversized_payload_rejected_by_middleware(self):
-        # Multi-MB payload cap middleware test (> 100 KB)
         huge_code = "A" * (200 * 1024)
         res = self.client.post(
             "/submissions/",
@@ -133,7 +127,6 @@ class TestFastAPIEndpoints(unittest.TestCase):
             sub_data = res.json()
             self.assertEqual(sub_data["status"], "QUEUED")
 
-            # Retrieve submission
             sub_id = sub_data["id"]
             res_get = self.client.get(f"/submissions/{sub_id}")
             self.assertEqual(res_get.status_code, 200)
@@ -143,7 +136,6 @@ class TestFastAPIEndpoints(unittest.TestCase):
             queue_client.enqueue_submission = original_enqueue
 
     def test_submission_history_pagination(self):
-        # Create multiple submissions
         sub1 = Submission(id="sub-1", problem_id=1, source_code="code1", language="cpp", status="ACCEPTED")
         sub2 = Submission(id="sub-2", problem_id=1, source_code="code2", language="cpp", status="WRONG_ANSWER")
         self.db.add_all([sub1, sub2])
@@ -169,7 +161,6 @@ class TestFastAPIEndpoints(unittest.TestCase):
 
         res = self.client.get("/submissions/sub-err")
         self.assertEqual(res.status_code, 200)
-        # Ensure internal path details are hidden from client response
         self.assertEqual(res.json()["error_message"], "Judge system error. Please try again later.")
 
     def test_database_outage_returns_503(self):

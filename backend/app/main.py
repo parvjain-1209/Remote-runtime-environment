@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import problems, submissions
+from app.api import auth, problems, submissions
 from app.config import settings
 from app.database import init_db
 from app.services.queue_client import queue_client
@@ -57,6 +57,7 @@ app.add_middleware(
 )
 
 # Register API Routers
+app.include_router(auth.router)
 app.include_router(problems.router)
 app.include_router(submissions.router)
 
