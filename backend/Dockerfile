@@ -1,6 +1,5 @@
 FROM python:3.11-slim
 
-# Install C/C++ compilers and build tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     g++ \
