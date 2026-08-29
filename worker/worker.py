@@ -2,7 +2,8 @@
 Python Worker Service for GDG Remote Runtime.
 
 Listens to Redis Streams for submission job IDs, performs atomic status claiming,
-invokes the Phase 3 Docker Judge pipeline, persists results to PostgreSQL, and ACKs jobs.
+invokes the Judge pipeline (Docker Sandbox or System Binaries LocalExecutor),
+persists results to PostgreSQL, and ACKs jobs.
 """
 
 import logging
@@ -32,7 +33,7 @@ from app.models.testcase import TestCase
 
 from comparator import OutputComparator
 from compiler import compile_code
-from executor import DockerExecutor
+from executor import DockerExecutor, LocalExecutor
 from judge import Judge, JudgeResult
 from sandbox_policy import DEFAULT_SANDBOX_POLICY, CompileLimits, ExecutionLimits
 
@@ -176,20 +177,7 @@ class Worker:
                 logger.info(f"Submission '{submission_id}' is already terminal ({sub.status}). ACK job.")
                 return True
 
-            # 3. Enforce Docker availability
-            if not is_docker_available():
-                logger.error(f"Docker is unavailable on worker host! Cannot process submission '{submission_id}' safely.")
-                self._update_submission_result(
-                    db=db,
-                    submission_id=submission_id,
-                    status_val=SubmissionStatus.SYSTEM_ERROR.value,
-                    execution_time_ms=0.0,
-                    error_message="Judge system error: Docker execution environment unavailable.",
-                    tc_results=None,
-                )
-                return True
-
-            # 4. Atomic DB Claiming (QUEUED -> COMPILING)
+            # 3. Atomic DB Claiming (QUEUED -> COMPILING)
             now_utc = datetime.now(timezone.utc)
             stmt = text(
                 "UPDATE submissions SET status = :new_status, started_at = :started_at "
@@ -210,7 +198,7 @@ class Worker:
                 logger.info(f"Submission '{submission_id}' claim failed (already claimed/non-QUEUED). Skipping.")
                 return True
 
-            # 5. Load Problem and TestCases
+            # 4. Load Problem and TestCases
             problem = db.query(Problem).filter(Problem.id == sub.problem_id).first()
             if not problem:
                 self._update_submission_result(
@@ -233,11 +221,18 @@ class Worker:
 
             judge_tcs = [{"input": tc.input, "expected": tc.expected_output} for tc in testcases]
 
-            # 6. Instantiate DockerExecutor for production judging
-            logger.info(f"Executing submission '{submission_id}' ({sub.language}) via Docker Sandbox Engine")
-            executor = DockerExecutor(
-                policy=DEFAULT_SANDBOX_POLICY, submission_id=submission_id, test_index=0
-            )
+            # 5. Determine execution engine based on Docker daemon availability
+            use_docker = is_docker_available()
+            if use_docker:
+                logger.info(f"Executing submission '{submission_id}' ({sub.language}) via Docker Sandbox Engine")
+                executor = DockerExecutor(
+                    policy=DEFAULT_SANDBOX_POLICY, submission_id=submission_id, test_index=0
+                )
+                use_docker_compiler = True
+            else:
+                logger.info(f"Docker unavailable on worker host. Executing submission '{submission_id}' ({sub.language}) via LocalExecutor using system binaries.")
+                executor = LocalExecutor()
+                use_docker_compiler = False
 
             comp_limits = CompileLimits(timeout_s=DEFAULT_SANDBOX_POLICY.compilation_timeout_seconds)
             exec_limits = ExecutionLimits(
@@ -247,11 +242,11 @@ class Worker:
 
             judge = Judge(
                 executor=executor,
-                use_docker_compiler=True,
+                use_docker_compiler=use_docker_compiler,
                 policy=DEFAULT_SANDBOX_POLICY,
             )
 
-            # 7. Evaluate via Judge
+            # 6. Evaluate via Judge
             judge_res: JudgeResult = judge.evaluate(
                 submission_id=submission_id,
                 source_code=sub.source_code,
@@ -270,7 +265,7 @@ class Worker:
                 for tc_res in judge_res.testcase_results
             ]
 
-            # 8. Persist Final Result to PostgreSQL
+            # 7. Persist Final Result to PostgreSQL
             self._update_submission_result(
                 db=db,
                 submission_id=submission_id,

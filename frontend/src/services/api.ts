@@ -13,7 +13,7 @@ import {
 } from '../types';
 
 const API_BASE_URL =
-  (import.meta.env.VITE_API_BASE_URL as string) || 'http://localhost:8000';
+  (import.meta.env.VITE_API_BASE_URL as string) || 'https://remote-runtime-environment.onrender.com';
 
 const TOKEN_KEY = 'gdg_oj_jwt_token';
 
