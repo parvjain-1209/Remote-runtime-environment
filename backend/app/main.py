@@ -78,27 +78,3 @@ def health_check():
         "service": "gdg-remote-runtime-backend",
         "redis": redis_ok,
     }
-
-
-@app.get("/debug/submission/{submission_id}", tags=["Debug"])
-def debug_submission(submission_id: str):
-    """Temporary debug endpoint to view raw error messages. Remove before production hardening."""
-    from app.database import SessionLocal
-    from app.models.submission import Submission
-    db = SessionLocal()
-    try:
-        sub = db.query(Submission).filter(Submission.id == submission_id).first()
-        if not sub:
-            return {"error": "not found"}
-        return {
-            "id": sub.id,
-            "status": sub.status,
-            "error_message_raw": sub.error_message,
-            "testcase_results": sub.testcase_results,
-            "language": sub.language,
-            "created_at": str(sub.created_at),
-            "completed_at": str(sub.completed_at),
-            "execution_time_ms": sub.execution_time_ms,
-        }
-    finally:
-        db.close()
