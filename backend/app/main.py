@@ -47,10 +47,11 @@ async def limit_request_body_size(request: Request, call_next):
     return await call_next(request)
 
 
-# Priority 10: Fixed CORS configuration using explicit allowed origins
+# Priority 10: Production CORS configuration allowing Vercel subdomains & local dev hosts
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
