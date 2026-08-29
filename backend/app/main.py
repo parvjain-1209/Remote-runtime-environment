@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import auth, problems, submissions, users
+from app.api import auth, metrics, problems, submissions, users
 from app.config import settings
 from app.database import init_db
 from app.services.queue_client import queue_client
@@ -61,6 +61,7 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(problems.router)
 app.include_router(submissions.router)
+app.include_router(metrics.router)
 
 
 @app.get("/health", tags=["Health"])
