@@ -2,6 +2,7 @@
 FastAPI Application Entry Point.
 """
 
+import os
 import subprocess
 import sys
 from contextlib import asynccontextmanager
@@ -21,8 +22,8 @@ async def lifespan(app: FastAPI):
     init_db()
     # Spawn the background execution worker on startup
     worker_proc = subprocess.Popen(
-        [sys.executable, "worker/worker.py"],
-        env={**sys.modules['os'].environ, "PYTHONPATH": "."}
+        [sys.executable, "-m", "worker.worker"],
+        env={**os.environ, "PYTHONPATH": "."}
     )
     yield
     worker_proc.terminate()

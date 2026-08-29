@@ -297,7 +297,7 @@ def compile_code(
             duration_ms=round(duration_ms, 2),
             timed_out=False,
             oom_killed=False,
-            is_docker_system_error=True,
+            is_docker_system_error=False,
             error_message=f"Compiler binary for '{language}' ({cmd[0]}) not found on host system.",
         )
 

@@ -62,7 +62,10 @@ class Worker:
     """
 
     def __init__(self):
-        self.redis_client = redis.from_url(settings.redis_url, decode_responses=True)
+        redis_kwargs = {"decode_responses": True}
+        if settings.redis_url.startswith("rediss://"):
+            redis_kwargs["ssl_cert_reqs"] = "none"
+        self.redis_client = redis.from_url(settings.redis_url, **redis_kwargs)
         self.stream_name = settings.redis_stream_name
         self.group_name = settings.redis_consumer_group
         self.consumer_name = settings.worker_consumer_name

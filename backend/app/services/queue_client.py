@@ -26,7 +26,10 @@ class QueueClient:
     def client(self) -> redis.Redis:
         """Lazy-loaded Redis client instance."""
         if self._redis_client is None:
-            self._redis_client = redis.from_url(self.redis_url, decode_responses=True)
+            redis_kwargs = {"decode_responses": True}
+            if self.redis_url.startswith("rediss://"):
+                redis_kwargs["ssl_cert_reqs"] = "none"
+            self._redis_client = redis.from_url(self.redis_url, **redis_kwargs)
         return self._redis_client
 
     def ensure_consumer_group(self) -> None:

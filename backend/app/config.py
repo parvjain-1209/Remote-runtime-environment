@@ -53,6 +53,10 @@ class Settings:
             url = url.replace("@localhost:", "@postgres:")
         if is_in_docker and "@127.0.0.1:" in url:
             url = url.replace("@127.0.0.1:", "@postgres:")
+        # Cloud PostgreSQL (Render) requires SSL
+        if url.startswith("postgresql") and "sslmode" not in url and "localhost" not in url and "127.0.0.1" not in url:
+            sep = "&" if "?" in url else "?"
+            url = url + sep + "sslmode=require"
         return url
 
     @property
@@ -63,6 +67,11 @@ class Settings:
         if is_in_docker and "redis://127.0.0.1:" in url:
             url = url.replace("redis://127.0.0.1:", "redis://redis:")
         return url
+
+    @property
+    def is_redis_tls(self) -> bool:
+        """Returns True if the Redis URL uses TLS (rediss://)."""
+        return self.redis_url.startswith("rediss://")
 
     @property
     def host_workspace_dir(self) -> str:
