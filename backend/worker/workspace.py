@@ -2,7 +2,7 @@
 Submission Workspace Lifecycle Helper.
 
 Provides isolated temporary filesystem workspaces for participant submissions.
-Supports C++, Python, and Java source files.
+Supports C++, Python, and Java source files with cloud-resilient temp directory fallbacks.
 """
 
 import os
@@ -24,22 +24,40 @@ class SubmissionWorkspace:
     Context manager for a single submission workspace.
 
     Creates a dedicated temporary directory supporting C++, Python, and Java files.
+    Includes automated fallback to standard system temp directory for cloud environments (Render/containers).
     """
 
     MAX_SOURCE_SIZE_BYTES: int = DEFAULT_SOURCE_CODE_MAX_BYTES
 
     def __init__(self, base_dir: Optional[str] = None):
         if base_dir is None:
-            base_dir = os.getenv("WORKER_WORKSPACE_DIR", "./runtime-workspaces")
+            base_dir = os.getenv("WORKER_WORKSPACE_DIR", "")
 
-        # Ensure base directory exists
-        Path(base_dir).mkdir(parents=True, exist_ok=True)
-        self._base_dir = base_dir
+        target_dir = None
+        if base_dir and base_dir.strip():
+            try:
+                p = Path(base_dir).resolve()
+                p.mkdir(parents=True, exist_ok=True)
+                test_file = p / f".perm_test_{os.getpid()}"
+                test_file.touch()
+                test_file.unlink()
+                target_dir = str(p)
+            except Exception:
+                target_dir = None
+
+        if target_dir is None:
+            target_dir = tempfile.gettempdir()
+
+        self._base_dir = target_dir
         self._temp_dir: Optional[tempfile.TemporaryDirectory] = None
         self.dir_path: Optional[Path] = None
 
     def __enter__(self) -> "SubmissionWorkspace":
-        self._temp_dir = tempfile.TemporaryDirectory(prefix="submission_", dir=self._base_dir)
+        try:
+            self._temp_dir = tempfile.TemporaryDirectory(prefix="submission_", dir=self._base_dir)
+        except Exception:
+            # Fallback to standard OS temp directory if base_dir creation fails
+            self._temp_dir = tempfile.TemporaryDirectory(prefix="submission_")
         self.dir_path = Path(self._temp_dir.name)
         return self
 
