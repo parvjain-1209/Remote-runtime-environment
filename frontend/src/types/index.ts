@@ -39,6 +39,17 @@ export interface RegisterRequest {
   password: string;
 }
 
+export interface UserStatsResponse {
+  user: User;
+  total_submissions: number;
+  total_solved_problems: number;
+  total_attempted_problems: number;
+  acceptance_rate: number;
+  solved_by_difficulty: Record<string, number>;
+  total_by_difficulty: Record<string, number>;
+  verdict_counts: Record<string, number>;
+}
+
 export interface TestCaseSample {
   id: number;
   input: string;

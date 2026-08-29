@@ -5,8 +5,8 @@ import { HealthResponse } from '../types';
 import { AuthModal } from './AuthModal';
 
 interface NavbarProps {
-  currentView: 'problems' | 'workspace' | 'history';
-  onNavigate: (view: 'problems' | 'history') => void;
+  currentView: 'problems' | 'workspace' | 'history' | 'dashboard';
+  onNavigate: (view: 'problems' | 'history' | 'dashboard') => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate }) => {
@@ -62,6 +62,15 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate }) => {
               Submission History
             </button>
 
+            {user && (
+              <button
+                className={`nav-button ${currentView === 'dashboard' ? 'active' : ''}`}
+                onClick={() => onNavigate('dashboard')}
+              >
+                Dashboard
+              </button>
+            )}
+
             <div className="health-badge" title={healthError ? 'Backend API Unreachable' : `API Status: ${health?.status || 'checking'}, Redis Stream: ${health?.redis ? 'Connected' : 'Disconnected'}`}>
               <span className={`health-dot ${healthError || !health?.redis ? 'error' : 'ok'}`}></span>
               <span className="text-slate-400">
@@ -73,6 +82,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate }) => {
             {user ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginLeft: '0.5rem' }}>
                 <span
+                  onClick={() => onNavigate('dashboard')}
                   style={{
                     backgroundColor: 'rgba(56, 189, 248, 0.1)',
                     color: '#38bdf8',
@@ -81,7 +91,9 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate }) => {
                     borderRadius: '9999px',
                     fontSize: '0.8rem',
                     fontWeight: 600,
+                    cursor: 'pointer',
                   }}
+                  title="View Personal Dashboard"
                 >
                   👤 {user.username}
                 </span>

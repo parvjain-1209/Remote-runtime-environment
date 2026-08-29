@@ -9,6 +9,7 @@ import {
   SubmissionStatus,
   TokenResponse,
   User,
+  UserStatsResponse,
 } from '../types';
 
 const API_BASE_URL =
@@ -47,7 +48,7 @@ const TERMINAL_STATUSES: Set<SubmissionStatus> = new Set([
   'SYSTEM_ERROR',
 ]);
 
-// Auth Endpoints
+// Auth & User Endpoints
 export async function registerUser(req: RegisterRequest): Promise<TokenResponse> {
   const res = await fetch(`${API_BASE_URL}/auth/register`, {
     method: 'POST',
@@ -92,6 +93,42 @@ export async function fetchCurrentUser(): Promise<User> {
   if (!res.ok) {
     removeStoredToken();
     throw new Error('Session expired or invalid token');
+  }
+
+  return res.json();
+}
+
+export async function fetchUserStats(): Promise<UserStatsResponse> {
+  const headers = getAuthHeaders();
+  if (!headers.Authorization) {
+    throw new Error('Authentication required');
+  }
+
+  const res = await fetch(`${API_BASE_URL}/users/me/stats`, { headers });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch user statistics (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function fetchUserSubmissions(
+  limit: number = 20,
+  offset: number = 0
+): Promise<SubmissionListResponse> {
+  const headers = getAuthHeaders();
+  if (!headers.Authorization) {
+    throw new Error('Authentication required');
+  }
+
+  const params = new URLSearchParams({
+    limit: limit.toString(),
+    offset: offset.toString(),
+  });
+
+  const res = await fetch(`${API_BASE_URL}/users/me/submissions?${params.toString()}`, { headers });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch personal submissions (${res.status})`);
   }
 
   return res.json();

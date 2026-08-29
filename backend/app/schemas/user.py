@@ -1,42 +1,49 @@
 """
-Pydantic Schemas for Authentication and User Profile.
+Pydantic Schemas for User Authentication & User Statistics.
 """
 
 from datetime import datetime
-from typing import Optional
+from typing import Dict
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class UserRegister(BaseModel):
-    """Payload for user registration."""
-    username: str = Field(..., min_length=3, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
+    username: str = Field(..., min_length=3, max_length=50, pattern=r"^[a-zA-Z0-9_-]+$")
     email: EmailStr
     password: str = Field(..., min_length=6, max_length=128)
 
 
 class UserLogin(BaseModel):
-    """Payload for user login."""
     username: str
     password: str
 
 
 class UserResponse(BaseModel):
-    """Response schema for user data."""
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     username: str
-    email: str
+    email: EmailStr
     created_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
 
 
 class Token(BaseModel):
-    """JWT Access Token response schema."""
     access_token: str
     token_type: str = "bearer"
     user: UserResponse
 
 
 class TokenData(BaseModel):
-    """Internal schema for decoded JWT payload data."""
-    username: Optional[str] = None
+    username: str | None = None
+    user_id: int | None = None
+
+
+class UserStatsResponse(BaseModel):
+    user: UserResponse
+    total_submissions: int
+    total_solved_problems: int
+    total_attempted_problems: int
+    acceptance_rate: float
+    solved_by_difficulty: Dict[str, int]
+    total_by_difficulty: Dict[str, int]
+    verdict_counts: Dict[str, int]

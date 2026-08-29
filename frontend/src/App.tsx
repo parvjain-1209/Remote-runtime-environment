@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { Navbar } from './components/Navbar';
 import { AuthProvider } from './context/AuthContext';
+import { Dashboard } from './pages/Dashboard';
 import { ProblemList } from './pages/ProblemList';
 import { ProblemWorkspace } from './pages/ProblemWorkspace';
 import { SubmissionHistory } from './pages/SubmissionHistory';
 
-type ViewMode = 'problems' | 'workspace' | 'history';
+type ViewMode = 'problems' | 'workspace' | 'history' | 'dashboard';
 
 const MainApp: React.FC = () => {
   const [view, setView] = useState<ViewMode>('problems');
@@ -16,7 +17,7 @@ const MainApp: React.FC = () => {
     setView('workspace');
   };
 
-  const handleNavigate = (targetView: 'problems' | 'history') => {
+  const handleNavigate = (targetView: 'problems' | 'history' | 'dashboard') => {
     setView(targetView);
   };
 
@@ -38,6 +39,10 @@ const MainApp: React.FC = () => {
 
         {view === 'history' && (
           <SubmissionHistory onSelectProblem={handleSelectProblem} />
+        )}
+
+        {view === 'dashboard' && (
+          <Dashboard onSelectProblem={handleSelectProblem} />
         )}
       </main>
     </div>

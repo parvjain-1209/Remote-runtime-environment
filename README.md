@@ -2,7 +2,7 @@
 
 A secure, scalable remote code execution and judging platform built for competitive programming and coding evaluations.
 
-> **Status Notice (Phase 6.2 Complete)**: All phases through Phase 6.2 (User Authentication & JWT Authentication) are complete, fully verified, and passing 39/39 unit and integration tests. Features include user registration, bcrypt password hashing, JWT Bearer token authentication, submission ownership tracking, and tabbed frontend login/register UI.
+> **Status Notice (Phase 6.3 Complete)**: All phases through Phase 6.3 (User Statistics & Personal Dashboard) are complete, fully verified, and passing 44/44 unit and integration tests. Features include user registration, JWT authentication, personal solver statistics (`/users/me/stats`), difficulty breakdown ratios (`Easy`, `Medium`, `Hard`), verdict distribution metrics, and a frontend User Dashboard.
 
 ---
 
@@ -10,12 +10,12 @@ A secure, scalable remote code execution and judging platform built for competit
 
 ```
                          ┌─────────────────┐
-                         │ React Frontend  │  (Port 5173 - Auth Context & JWT Token Storage)
+                         │ React Frontend  │  (Port 5173 - User Dashboard & Auth Context)
                          └────────┬────────┘
                                   │ HTTP REST (Authorization: Bearer <JWT>)
                                   ▼
                          ┌─────────────────┐
-                         │ FastAPI Backend │  (Port 8000 - /auth/*, OAuth2 Bearer, 100KB Cap)
+                         │ FastAPI Backend │  (Port 8000 - /users/me/stats, /auth/*, 100KB Cap)
                          └───────┬─────┬───┘
                                  │     │
                               SQL│     │ enqueue (xadd with MAXLEN ~ 10000)
@@ -41,14 +41,12 @@ A secure, scalable remote code execution and judging platform built for competit
 
 ---
 
-## Authentication Endpoints (Phase 6.2)
+## User Statistics Endpoints (Phase 6.3)
 
-| Method | Endpoint | Description | Request Body / Header | Response |
-|--------|----------|-------------|-----------------------|----------|
-| `POST` | `/auth/register` | Register new user account | `{"username", "email", "password"}` | `Token` (`access_token`, `user`) |
-| `POST` | `/auth/login` | Authenticate credentials (JSON) | `{"username", "password"}` | `Token` (`access_token`, `user`) |
-| `POST` | `/auth/token` | OAuth2 standard form login | Form-data `username`, `password` | `Token` (`access_token`, `user`) |
-| `GET` | `/auth/me` | Fetch current user profile | `Authorization: Bearer <token>` | `UserResponse` (`id`, `username`, `email`) |
+| Method | Endpoint | Description | Auth Required | Response |
+|--------|----------|-------------|---------------|----------|
+| `GET` | `/users/me/stats` | Aggregated user solver metrics, difficulty ratios, and verdict counts | Yes (Bearer Token) | `UserStatsResponse` |
+| `GET` | `/users/me/submissions` | Paginated submission history belonging strictly to current user | Yes (Bearer Token) | `SubmissionListResponse` |
 
 ---
 
@@ -73,10 +71,10 @@ A secure, scalable remote code execution and judging platform built for competit
 
 ## Automated Test Suite
 
-Run the complete 39-test suite locally:
+Run the complete 44-test suite locally:
 
 ```bash
 .venv/bin/python3 -m unittest discover -s tests -v
 ```
 
-All 39 tests pass cleanly.
+All 44 tests pass cleanly.
