@@ -2,6 +2,8 @@
 FastAPI Application Entry Point.
 """
 
+import subprocess
+import sys
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,9 +18,14 @@ from app.services.queue_client import queue_client
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application startup and shutdown events."""
-    # Ensure DB tables exist
     init_db()
+    # Spawn the background execution worker on startup
+    worker_proc = subprocess.Popen(
+        [sys.executable, "worker/worker.py"],
+        env={**sys.modules['os'].environ, "PYTHONPATH": "."}
+    )
     yield
+    worker_proc.terminate()
 
 
 app = FastAPI(
@@ -29,7 +36,6 @@ app = FastAPI(
 )
 
 
-# Priority 9: Request Body Size Limit Middleware (Caps raw HTTP payload at 100 KB)
 @app.middleware("http")
 async def limit_request_body_size(request: Request, call_next):
     if request.method in ["POST", "PUT", "PATCH"]:
@@ -47,7 +53,6 @@ async def limit_request_body_size(request: Request, call_next):
     return await call_next(request)
 
 
-# Priority 10: Production CORS configuration allowing Vercel subdomains & local dev hosts
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -57,7 +62,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Register API Routers
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(problems.router)
@@ -67,7 +71,6 @@ app.include_router(metrics.router)
 
 @app.get("/health", tags=["Health"])
 def health_check():
-    """Healthcheck endpoint verifying DB and Redis stream status."""
     redis_ok = queue_client.ping()
     return {
         "status": "ok" if redis_ok else "degraded",
