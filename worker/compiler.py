@@ -2,12 +2,16 @@
 Multi-Language Compiler / Syntax Checker Module.
 
 Handles compilation & syntax validation of C++, Python, and Java source files locally or
-inside a hardened Docker container.
+inside a hardened Docker container. Includes cloud binary resolution and error logging.
 """
 
+import logging
 import os
+import shutil
 import subprocess
+import sys
 import time
+import traceback
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,6 +23,8 @@ from sandbox_policy import (
     CompileLimits,
     SandboxPolicy,
 )
+
+logger = logging.getLogger("worker.compiler")
 
 
 @dataclass(frozen=True)
@@ -36,6 +42,22 @@ class CompileResult:
     error_message: Optional[str] = None
 
 
+def find_executable(binary_name: str, fallback_paths: Optional[List[str]] = None) -> str:
+    """
+    Resolves binary executable path using shutil.which and absolute fallback paths.
+    """
+    which_path = shutil.which(binary_name)
+    if which_path and Path(which_path).exists():
+        return which_path
+
+    if fallback_paths:
+        for fp in fallback_paths:
+            if Path(fp).exists() and os.access(fp, os.X_OK):
+                return fp
+
+    return binary_name
+
+
 def compile_code_docker(
     workspace_dir: Union[str, Path],
     language: str = "cpp",
@@ -44,11 +66,6 @@ def compile_code_docker(
 ) -> CompileResult:
     """
     Compiles or syntax-checks source code inside a Docker container.
-
-    Supported languages:
-    - cpp: g++ -O3 /sandbox/source.cpp -o /sandbox/main
-    - python: python3 -m py_compile /sandbox/main.py
-    - java: javac /sandbox/Main.java
     """
     if policy is None:
         policy = DEFAULT_SANDBOX_POLICY
@@ -59,7 +76,6 @@ def compile_code_docker(
     container_name = f"judge-compile-{uuid.uuid4().hex[:12]}"
     lang = language.lower()
 
-    # Build docker run command for compilation
     docker_args = policy.to_docker_args(
         container_name=container_name,
         workspace_dir=ws_path,
@@ -103,7 +119,6 @@ def compile_code_docker(
         stdout_str = (proc.stdout or "")[: limits.max_output_bytes]
         stderr_str = (proc.stderr or "")[: limits.max_output_bytes]
 
-        # Check for Docker CLI launch error (exit code 125)
         if proc.returncode == 125:
             error_msg = f"Docker container launch failed: {stderr_str.strip() or 'Docker CLI returned exit code 125.'}"
             return CompileResult(
@@ -117,7 +132,6 @@ def compile_code_docker(
                 error_message=error_msg,
             )
 
-        # Inspect if compiler process was OOMKilled
         oom_killed = _inspect_compile_oom_killed(container_name)
 
         success = (proc.returncode == 0) and expected_target.exists() and not oom_killed
@@ -156,25 +170,15 @@ def compile_code_docker(
             error_message=f"Docker compilation timed out after {limits.timeout_s} seconds.",
         )
 
-    except FileNotFoundError:
-        duration_ms = (time.monotonic() - start_time) * 1000.0
-        return CompileResult(
-            success=False,
-            stdout="",
-            stderr="",
-            duration_ms=round(duration_ms, 2),
-            timed_out=False,
-            oom_killed=False,
-            is_docker_system_error=True,
-            error_message="Docker CLI binary not found on host system.",
-        )
-
     except Exception as ex:
         duration_ms = (time.monotonic() - start_time) * 1000.0
+        tb_str = traceback.format_exc()
+        logger.error(f"[compile_code_docker] Docker compilation exception: {ex}\n{tb_str}")
+        print(f"[compile_code_docker ERROR] {ex}\n{tb_str}", file=sys.stderr)
         return CompileResult(
             success=False,
             stdout="",
-            stderr="",
+            stderr=f"Docker compilation process error: {str(ex)}",
             duration_ms=round(duration_ms, 2),
             timed_out=False,
             oom_killed=False,
@@ -205,6 +209,7 @@ def compile_code(
 ) -> CompileResult:
     """
     Main compilation & syntax validation interface supporting C++, Python, and Java.
+    Executes directly via system binaries when use_docker is False.
     """
     if use_docker:
         src_parent = Path(source_path).resolve().parent
@@ -219,11 +224,14 @@ def compile_code(
     lang = language.lower()
 
     if lang == "python":
-        cmd = ["python3", "-m", "py_compile", str(src)]
+        py_bin = find_executable("python3", [sys.executable, "/usr/bin/python3", "/usr/local/bin/python3"])
+        cmd = [py_bin, "-m", "py_compile", str(src)]
     elif lang == "java":
-        cmd = ["javac", str(src)]
-    else:
-        cmd = ["g++"] + DEFAULT_COMPILER_FLAGS + [str(src), "-o", str(out)]
+        javac_bin = find_executable("javac", ["/usr/bin/javac", "/usr/local/bin/javac", "/usr/lib/jvm/default-java/bin/javac"])
+        cmd = [javac_bin, str(src)]
+    else:  # cpp
+        cpp_bin = find_executable("g++", ["/usr/bin/g++", "/usr/local/bin/g++", "/usr/bin/gcc", "/usr/local/bin/gcc"])
+        cmd = [cpp_bin] + DEFAULT_COMPILER_FLAGS + [str(src), "-o", str(out)]
 
     start_time = time.monotonic()
 
@@ -246,6 +254,9 @@ def compile_code(
         success = (proc.returncode == 0) and out.exists()
         error_msg = f"Compilation failed with exit code {proc.returncode}." if not success else None
 
+        if not success:
+            logger.warning(f"[compile_code] Local compilation failed for {lang} ({cmd[0]}): exit_code={proc.returncode}\nstderr: {stderr_str}")
+
         return CompileResult(
             success=success,
             stdout=stdout_str,
@@ -262,6 +273,7 @@ def compile_code(
         stdout_captured = (e.stdout or "").decode("utf-8", errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
         stderr_captured = (e.stderr or "").decode("utf-8", errors="replace") if isinstance(e.stderr, bytes) else (e.stderr or "")
 
+        logger.warning(f"[compile_code] Compilation timed out for {lang} after {limits.timeout_s}s")
         return CompileResult(
             success=False,
             stdout=stdout_captured[: limits.max_output_bytes],
@@ -273,25 +285,31 @@ def compile_code(
             error_message=f"Compilation timed out after {limits.timeout_s} seconds.",
         )
 
-    except FileNotFoundError:
+    except FileNotFoundError as fnfe:
         duration_ms = (time.monotonic() - start_time) * 1000.0
+        tb_str = traceback.format_exc()
+        logger.error(f"[compile_code] Compiler executable '{cmd[0]}' not found: {fnfe}\n{tb_str}")
+        print(f"[Compiler ERROR] Executable '{cmd[0]}' not found: {fnfe}\n{tb_str}", file=sys.stderr)
         return CompileResult(
             success=False,
             stdout="",
-            stderr="",
+            stderr=f"Compiler binary for '{language}' ({cmd[0]}) not found on host system.",
             duration_ms=round(duration_ms, 2),
             timed_out=False,
             oom_killed=False,
             is_docker_system_error=True,
-            error_message=f"Compiler binary for '{language}' not found on host system.",
+            error_message=f"Compiler binary for '{language}' ({cmd[0]}) not found on host system.",
         )
 
     except Exception as ex:
         duration_ms = (time.monotonic() - start_time) * 1000.0
+        tb_str = traceback.format_exc()
+        logger.error(f"[compile_code] Unexpected compilation exception for {lang}: {ex}\n{tb_str}")
+        print(f"[Compiler ERROR] Exception for '{language}': {ex}\n{tb_str}", file=sys.stderr)
         return CompileResult(
             success=False,
             stdout="",
-            stderr="",
+            stderr=f"Compilation process failure: {str(ex)}",
             duration_ms=round(duration_ms, 2),
             timed_out=False,
             oom_killed=False,

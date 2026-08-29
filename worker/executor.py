@@ -1,23 +1,29 @@
 """
 Executor Module.
 
-Defines the Executor Protocol interface, LocalExecutor for local testing,
+Defines the Executor Protocol interface, LocalExecutor for local & unprivileged cloud testing/execution,
 and DockerExecutor for hardened multi-language containerized execution (C++, Python, Java).
 """
 
 import json
+import logging
 import os
+import shutil
 import signal
 import subprocess
+import sys
 import threading
 import time
+import traceback
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Union
+from typing import List, Optional, Union
 
 from sandbox_policy import DEFAULT_SANDBOX_POLICY, ExecutionLimits, SandboxPolicy
+
+logger = logging.getLogger("worker.executor")
 
 
 @dataclass(frozen=True)
@@ -56,9 +62,26 @@ class Executor(ABC):
         pass
 
 
+def find_executable(binary_name: str, fallback_paths: Optional[List[str]] = None) -> str:
+    """
+    Resolves binary executable path using shutil.which and absolute fallback paths.
+    """
+    which_path = shutil.which(binary_name)
+    if which_path and Path(which_path).exists():
+        return which_path
+
+    if fallback_paths:
+        for fp in fallback_paths:
+            if Path(fp).exists() and os.access(fp, os.X_OK):
+                return fp
+
+    return binary_name
+
+
 class LocalExecutor(Executor):
     """
-    Development and testing executor running binaries directly on host via subprocess.
+    Cloud-resilient executor running compiled binaries and scripts directly on host via subprocess.
+    Requires no root privileges or Docker daemon.
     """
 
     def run(
@@ -76,6 +99,9 @@ class LocalExecutor(Executor):
         lang = language.lower()
 
         if not bin_path.exists():
+            err_msg = f"Target binary path '{bin_path}' does not exist."
+            logger.error(f"[LocalExecutor] {err_msg}")
+            print(f"[LocalExecutor ERROR] {err_msg}", file=sys.stderr)
             return ExecutionResult(
                 stdout="",
                 stderr="",
@@ -83,16 +109,18 @@ class LocalExecutor(Executor):
                 duration_ms=0.0,
                 timed_out=False,
                 output_limit_exceeded=False,
-                error_message=f"Target path '{bin_path}' does not exist.",
+                error_message=err_msg,
             )
 
         if lang == "python":
-            exec_cmd = ["python3", str(bin_path)]
+            py_bin = find_executable("python3", [sys.executable, "/usr/bin/python3", "/usr/local/bin/python3"])
+            exec_cmd = [py_bin, str(bin_path)]
             timeout_s = limits.timeout_s * 2.0
         elif lang == "java":
-            exec_cmd = ["java", "-Xmx256m", "-cp", str(cwd), "Main"]
+            java_bin = find_executable("java", ["/usr/bin/java", "/usr/local/bin/java", "/usr/lib/jvm/default-java/bin/java"])
+            exec_cmd = [java_bin, "-Xmx256m", "-cp", str(cwd), "Main"]
             timeout_s = limits.timeout_s * 2.0
-        else:
+        else:  # cpp
             exec_cmd = [str(bin_path)]
             timeout_s = limits.timeout_s
 
@@ -103,6 +131,10 @@ class LocalExecutor(Executor):
 
         output_exceeded = threading.Event()
         lock = threading.Lock()
+
+        # Safely attempt process group creation (handling non-root / restricted container environments)
+        proc = None
+        has_pgid = False
 
         try:
             proc = subprocess.Popen(
@@ -115,10 +147,40 @@ class LocalExecutor(Executor):
                 bufsize=1,
                 start_new_session=True,
             )
+            has_pgid = True
+        except (PermissionError, OSError) as pe:
+            logger.warning(f"[LocalExecutor] start_new_session=True failed ({pe}), retrying without process group session.")
+            try:
+                proc = subprocess.Popen(
+                    exec_cmd,
+                    cwd=cwd,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    bufsize=1,
+                )
+                has_pgid = False
+            except Exception as ex:
+                tb_str = traceback.format_exc()
+                logger.error(f"[LocalExecutor] Failed to launch process '{exec_cmd}': {ex}\n{tb_str}")
+                print(f"[LocalExecutor ERROR] Failed to launch process '{exec_cmd}': {ex}\n{tb_str}", file=sys.stderr)
+                return ExecutionResult(
+                    stdout="",
+                    stderr=f"LocalExecutor process launch error: {str(ex)}",
+                    return_code=-1,
+                    duration_ms=0.0,
+                    timed_out=False,
+                    output_limit_exceeded=False,
+                    error_message=f"Failed to launch process: {str(ex)}",
+                )
         except Exception as ex:
+            tb_str = traceback.format_exc()
+            logger.error(f"[LocalExecutor] Unexpected launch exception for '{exec_cmd}': {ex}\n{tb_str}")
+            print(f"[LocalExecutor ERROR] Unexpected launch exception for '{exec_cmd}': {ex}\n{tb_str}", file=sys.stderr)
             return ExecutionResult(
                 stdout="",
-                stderr="",
+                stderr=f"LocalExecutor process launch error: {str(ex)}",
                 return_code=-1,
                 duration_ms=0.0,
                 timed_out=False,
@@ -129,13 +191,16 @@ class LocalExecutor(Executor):
         pgid = proc.pid
 
         def kill_process_group():
-            try:
-                os.killpg(pgid, signal.SIGKILL)
-            except (OSError, ProcessLookupError):
+            if has_pgid:
                 try:
-                    proc.kill()
-                except (OSError, ProcessLookupError):
+                    os.killpg(pgid, signal.SIGKILL)
+                    return
+                except (OSError, ProcessLookupError, PermissionError):
                     pass
+            try:
+                proc.kill()
+            except (OSError, ProcessLookupError, PermissionError):
+                pass
 
         def read_pipe(pipe, chunks_list, is_stdout):
             nonlocal stdout_size, stderr_size
@@ -159,8 +224,8 @@ class LocalExecutor(Executor):
                             break
                         else:
                             chunks_list.append(chunk)
-            except Exception:
-                pass
+            except Exception as ex:
+                logger.debug(f"[LocalExecutor] Pipe read notice: {ex}")
             finally:
                 try:
                     pipe.close()
@@ -277,7 +342,6 @@ class DockerExecutor(Executor):
         unique_id = uuid.uuid4().hex[:8]
         container_name = f"judge-{self.submission_id}-{self.test_index}-{unique_id}"
 
-        # Construct docker run command
         docker_args = self.policy.to_docker_args(
             container_name=container_name,
             workspace_dir=ws_dir,
@@ -326,6 +390,9 @@ class DockerExecutor(Executor):
                 error_message="Docker CLI executable not found on host.",
             )
         except Exception as ex:
+            tb_str = traceback.format_exc()
+            logger.error(f"[DockerExecutor] Failed to spawn Docker container process: {ex}\n{tb_str}")
+            print(f"[DockerExecutor ERROR] {ex}\n{tb_str}", file=sys.stderr)
             return ExecutionResult(
                 stdout="",
                 stderr="",
