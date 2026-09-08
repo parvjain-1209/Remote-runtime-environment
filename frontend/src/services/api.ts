@@ -15,10 +15,11 @@ import {
 const API_BASE_URL =
   (import.meta.env.VITE_API_BASE_URL as string) || 'https://remote-runtime-environment.onrender.com';
 
-const TOKEN_KEY = 'gdg_oj_jwt_token';
+const TOKEN_KEY = 'remote_runtime_jwt_token';
+const LEGACY_TOKEN_KEY = 'gdg_oj_jwt_token';
 
 export function getStoredToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+  return localStorage.getItem(TOKEN_KEY) || localStorage.getItem(LEGACY_TOKEN_KEY);
 }
 
 export function setStoredToken(token: string): void {
@@ -27,6 +28,7 @@ export function setStoredToken(token: string): void {
 
 export function removeStoredToken(): void {
   localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(LEGACY_TOKEN_KEY);
 }
 
 function getAuthHeaders(): Record<string, string> {

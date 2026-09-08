@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
+import { AuthModal } from '../components/AuthModal';
 import { StatusBadge } from '../components/StatusBadge';
-import { fetchSubmissions } from '../services/api';
+import { useAuth } from '../context/AuthContext';
+import { fetchUserSubmissions } from '../services/api';
 import { SubmissionResponse } from '../types';
 
 interface SubmissionHistoryProps {
@@ -8,6 +10,8 @@ interface SubmissionHistoryProps {
 }
 
 export const SubmissionHistory: React.FC<SubmissionHistoryProps> = ({ onSelectProblem }) => {
+  const { user } = useAuth();
+  const [authModalOpen, setAuthModalOpen] = useState<boolean>(false);
   const [submissions, setSubmissions] = useState<SubmissionResponse[]>([]);
   const [total, setTotal] = useState<number>(0);
   const [limit] = useState<number>(10);
@@ -18,10 +22,11 @@ export const SubmissionHistory: React.FC<SubmissionHistoryProps> = ({ onSelectPr
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const loadSubmissions = async () => {
+    if (!user) return;
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchSubmissions(undefined, limit, offset);
+      const data = await fetchUserSubmissions(limit, offset);
       setSubmissions(data.submissions);
       setTotal(data.total);
     } catch (err: any) {
@@ -32,8 +37,10 @@ export const SubmissionHistory: React.FC<SubmissionHistoryProps> = ({ onSelectPr
   };
 
   useEffect(() => {
-    loadSubmissions();
-  }, [offset, limit]);
+    if (user) {
+      loadSubmissions();
+    }
+  }, [user, offset, limit]);
 
   const totalPages = Math.ceil(total / limit) || 1;
   const currentPage = Math.floor(offset / limit) + 1;
@@ -47,13 +54,54 @@ export const SubmissionHistory: React.FC<SubmissionHistoryProps> = ({ onSelectPr
     }
   };
 
+  if (!user) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+        <div
+          className="card"
+          style={{
+            maxWidth: '520px',
+            width: '100%',
+            textAlign: 'center',
+            padding: '3rem 2rem',
+            backgroundColor: '#0f172a',
+            border: '1px solid #1e293b',
+            borderRadius: '16px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5)',
+          }}
+        >
+          <div style={{ fontSize: '3.5rem', marginBottom: '1.25rem', lineHeight: 1 }}>🔒</div>
+          <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#f8fafc', marginBottom: '0.75rem' }}>
+            Authentication Required
+          </h2>
+          <p style={{ color: '#94a3b8', fontSize: '0.95rem', lineHeight: 1.6, marginBottom: '2rem' }}>
+            Submission history is protected. Please log in or register to view your personal submissions and execution verdicts.
+          </p>
+          <button
+            className="btn-primary"
+            onClick={() => setAuthModalOpen(true)}
+            style={{ padding: '0.75rem 2rem', fontSize: '1rem', fontWeight: 600, margin: '0 auto' }}
+          >
+            Log In / Register
+          </button>
+        </div>
+        <AuthModal isOpen={authModalOpen} onClose={() => setAuthModalOpen(false)} />
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#f8fafc' }}>Submission History</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#f8fafc' }}>Your Submission History</h1>
+            <span style={{ fontSize: '0.8rem', backgroundColor: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', padding: '0.2rem 0.65rem', borderRadius: '9999px', border: '1px solid rgba(56, 189, 248, 0.25)', fontWeight: 600 }}>
+              👤 {user.username}
+            </span>
+          </div>
           <p style={{ color: '#94a3b8', fontSize: '0.9rem', marginTop: '0.25rem' }}>
-            Real-time audit log of all participant submissions and container evaluation outcomes.
+            Real-time audit log of your personal code submissions and container evaluation outcomes.
           </p>
         </div>
 
@@ -78,7 +126,7 @@ export const SubmissionHistory: React.FC<SubmissionHistoryProps> = ({ onSelectPr
 
       {!loading && !error && submissions.length === 0 && (
         <div style={{ padding: '3rem', textAlign: 'center', color: '#64748b', backgroundColor: '#111827', borderRadius: '12px', border: '1px solid #1e293b' }}>
-          No submissions found yet. Submit a solution from the problem workspace to see execution results here!
+          No submissions found for your account yet. Submit a solution from the problem workspace to see your execution results here!
         </div>
       )}
 
@@ -208,6 +256,8 @@ export const SubmissionHistory: React.FC<SubmissionHistoryProps> = ({ onSelectPr
           </div>
         </div>
       )}
+
+      <AuthModal isOpen={authModalOpen} onClose={() => setAuthModalOpen(false)} />
     </div>
   );
 };

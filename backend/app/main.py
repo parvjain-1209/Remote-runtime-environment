@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="GDG Remote Runtime Environment API",
+    title="Remote Runtime Environment API",
     description="Backend API for competitive programming code execution and judging platform.",
     version="1.0.0",
     lifespan=lifespan,
@@ -75,6 +75,6 @@ def health_check():
     redis_ok = queue_client.ping()
     return {
         "status": "ok" if redis_ok else "degraded",
-        "service": "gdg-remote-runtime-backend",
+        "service": "remote-runtime-backend",
         "redis": redis_ok,
     }

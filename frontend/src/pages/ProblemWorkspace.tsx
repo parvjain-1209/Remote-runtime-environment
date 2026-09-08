@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { AuthModal } from '../components/AuthModal';
 import { CodeEditor } from '../components/CodeEditor';
 import { StatusBadge } from '../components/StatusBadge';
+import { useAuth } from '../context/AuthContext';
 import {
   fetchProblemDetail,
   isTerminalStatus,
@@ -16,6 +18,10 @@ interface ProblemWorkspaceProps {
 
 const STARTER_TEMPLATES: Record<string, string> = {
   cpp: `#include <iostream>
+#include <vector>
+#include <string>
+#include <algorithm>
+
 using namespace std;
 
 int main() {
@@ -23,37 +29,27 @@ int main() {
     ios_base::sync_with_stdio(false);
     cin.tie(NULL);
 
-    int a, b;
-    if (cin >> a >> b) {
-        cout << a + b << "\\n";
-    }
+    // TODO: Write your solution here
 
     return 0;
 }
 `,
   python: `import sys
 
-def main():
-    # Read input from standard input
-    input_data = sys.stdin.read().split()
-    if len(input_data) >= 2:
-        a = int(input_data[0])
-        b = int(input_data[1])
-        print(a + b)
+def solve():
+    # TODO: Write your solution here
+    pass
 
 if __name__ == "__main__":
-    main()
+    solve()
 `,
-  java: `import java.util.Scanner;
+  java: `import java.io.*;
+import java.util.*;
 
 public class Main {
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
-        if (scanner.hasNextInt()) {
-            int a = scanner.nextInt();
-            int b = scanner.nextInt();
-            System.out.println(a + b);
-        }
+        // TODO: Write your solution here
     }
 }
 `,
@@ -66,6 +62,9 @@ export const ProblemWorkspace: React.FC<ProblemWorkspaceProps> = ({
   const [problem, setProblem] = useState<ProblemDetail | null>(null);
   const [loadingProblem, setLoadingProblem] = useState<boolean>(true);
   const [problemError, setProblemError] = useState<string | null>(null);
+
+  const { user } = useAuth();
+  const [authModalOpen, setAuthModalOpen] = useState<boolean>(false);
 
   const [language, setLanguage] = useState<string>('cpp');
   const [sourceCode, setSourceCode] = useState<string>(STARTER_TEMPLATES['cpp']);
@@ -106,6 +105,12 @@ export const ProblemWorkspace: React.FC<ProblemWorkspaceProps> = ({
   };
 
   const handleSubmit = async () => {
+    if (!user) {
+      setSubmitError('Authentication required: Please log in or register before submitting solutions.');
+      setAuthModalOpen(true);
+      return;
+    }
+
     if (!sourceCode.trim() || submitting) return;
 
     if (pollCleanupRef.current) {
@@ -368,10 +373,13 @@ export const ProblemWorkspace: React.FC<ProblemWorkspaceProps> = ({
             value={sourceCode}
             onChange={setSourceCode}
             disabled={submitting}
+            language={language}
             onResetTemplate={() => setSourceCode(STARTER_TEMPLATES[language] || STARTER_TEMPLATES['cpp'])}
           />
         </div>
       </div>
+
+      <AuthModal isOpen={authModalOpen} onClose={() => setAuthModalOpen(false)} />
     </div>
   );
 };

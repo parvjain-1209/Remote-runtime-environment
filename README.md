@@ -1,4 +1,4 @@
-# GDG Remote Runtime Environment / Online Judge
+# Remote Runtime Environment
 
 A secure, scalable remote code execution and judging platform built for competitive programming and coding evaluations.
 

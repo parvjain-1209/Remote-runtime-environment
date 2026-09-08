@@ -45,7 +45,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate }) => {
         <div className="navbar-inner">
           <div className="brand" onClick={() => onNavigate('problems')}>
             <div className="brand-icon">OJ</div>
-            <span>GDG Remote Judge</span>
+            <span>Remote Runtime Environment</span>
           </div>
 
           <div className="nav-links">
@@ -57,7 +57,12 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate }) => {
             </button>
             <button
               className={`nav-button ${currentView === 'history' ? 'active' : ''}`}
-              onClick={() => onNavigate('history')}
+              onClick={() => {
+                onNavigate('history');
+                if (!user) {
+                  setAuthModalOpen(true);
+                }
+              }}
             >
               Submission History
             </button>
