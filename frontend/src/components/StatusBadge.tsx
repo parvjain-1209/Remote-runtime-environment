@@ -12,39 +12,45 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, className = ''
   const isPending =
     normalized === 'queued' || normalized === 'compiling' || normalized === 'running';
 
-  const formatLabel = (st: string) => {
+  const formatBadgeInfo = (st: string) => {
     switch (st.toUpperCase()) {
       case 'ACCEPTED':
-        return 'Accepted';
+        return { label: 'Accepted', icon: '✓' };
       case 'WRONG_ANSWER':
-        return 'Wrong Answer';
+        return { label: 'Wrong Answer', icon: '✗' };
       case 'TIME_LIMIT_EXCEEDED':
-        return 'Time Limit Exceeded';
+        return { label: 'Time Limit Exceeded', icon: '⏱' };
       case 'MEMORY_LIMIT_EXCEEDED':
-        return 'Memory Limit Exceeded';
+        return { label: 'Memory Limit Exceeded', icon: '💾' };
       case 'OUTPUT_LIMIT_EXCEEDED':
-        return 'Output Limit Exceeded';
+        return { label: 'Output Limit Exceeded', icon: '📄' };
       case 'COMPILATION_ERROR':
-        return 'Compilation Error';
+        return { label: 'Compilation Error', icon: '⚠' };
       case 'RUNTIME_ERROR':
-        return 'Runtime Error';
+        return { label: 'Runtime Error', icon: '⚡' };
       case 'SYSTEM_ERROR':
-        return 'System Error';
+        return { label: 'System Error', icon: '⚙' };
       case 'QUEUED':
-        return 'Queued';
+        return { label: 'Queued', icon: null };
       case 'COMPILING':
-        return 'Compiling...';
+        return { label: 'Compiling...', icon: null };
       case 'RUNNING':
-        return 'Running...';
+        return { label: 'Evaluating...', icon: null };
       default:
-        return st;
+        return { label: st, icon: null };
     }
   };
 
+  const { label, icon } = formatBadgeInfo(status);
+
   return (
-    <span className={`status-badge ${normalized} ${className}`}>
-      {isPending && <span className="pulse-spinner"></span>}
-      {formatLabel(status)}
+    <span className={`status-badge ${normalized} ${className}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontWeight: 600 }}>
+      {isPending ? (
+        <span className="pulse-spinner" style={{ width: '11px', height: '11px' }}></span>
+      ) : icon ? (
+        <span style={{ fontSize: '0.85em', lineHeight: 1 }}>{icon}</span>
+      ) : null}
+      <span>{label}</span>
     </span>
   );
 };

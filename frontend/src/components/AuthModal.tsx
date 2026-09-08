@@ -16,6 +16,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    if (isOpen) {
+      window.addEventListener('keydown', handleKeyDown);
+    }
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -50,7 +60,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         right: 0,
         bottom: 0,
         backgroundColor: 'rgba(0, 0, 0, 0.75)',
-        backdropFilter: 'blur(4px)',
+        backdropFilter: 'blur(8px)',
         zIndex: 100,
         display: 'flex',
         alignItems: 'center',
@@ -63,11 +73,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         className="card"
         style={{
           width: '100%',
-          maxWidth: '420px',
-          backgroundColor: '#111827',
+          maxWidth: '430px',
+          backgroundColor: '#0f172a',
           border: '1px solid #1e293b',
-          borderRadius: '12px',
-          padding: '1.75rem',
+          borderRadius: '16px',
+          padding: '2rem',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(56, 189, 248, 0.1)',
         }}
         onClick={(e) => e.stopPropagation()}
       >

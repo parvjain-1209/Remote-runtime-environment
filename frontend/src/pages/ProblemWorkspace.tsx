@@ -66,6 +66,10 @@ export const ProblemWorkspace: React.FC<ProblemWorkspaceProps> = ({
   const { user } = useAuth();
   const [authModalOpen, setAuthModalOpen] = useState<boolean>(false);
 
+  const [splitRatio, setSplitRatio] = useState<number>(46);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
   const [language, setLanguage] = useState<string>('cpp');
   const [sourceCode, setSourceCode] = useState<string>(STARTER_TEMPLATES['cpp']);
   const [submitting, setSubmitting] = useState<boolean>(false);
@@ -73,6 +77,29 @@ export const ProblemWorkspace: React.FC<ProblemWorkspaceProps> = ({
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const pollCleanupRef = useRef<(() => void) | null>(null);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const newRatio = ((moveEvent.clientX - rect.left) / rect.width) * 100;
+      if (newRatio >= 25 && newRatio <= 75) {
+        setSplitRatio(newRatio);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
 
   useEffect(() => {
     return () => {
@@ -240,10 +267,31 @@ export const ProblemWorkspace: React.FC<ProblemWorkspaceProps> = ({
         </div>
       </div>
 
-      {/* Split Workspace Layout */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', flex: 1, overflow: 'hidden' }}>
+      {/* Split Workspace Layout with Draggable Resizer */}
+      <div
+        ref={containerRef}
+        className="workspace-split-container"
+        style={{
+          display: 'flex',
+          flex: 1,
+          overflow: 'hidden',
+          userSelect: isDragging ? 'none' : 'auto',
+          position: 'relative',
+        }}
+      >
         {/* Left Panel: Problem Statement & Results */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', overflowY: 'auto', paddingRight: '0.5rem' }}>
+        <div
+          className="workspace-left-panel"
+          style={{
+            width: `${splitRatio}%`,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '1rem',
+            overflowY: 'auto',
+            paddingRight: '0.75rem',
+            minWidth: '280px',
+          }}
+        >
           <div className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
               <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#f8fafc' }}>Description</h3>
@@ -367,8 +415,27 @@ export const ProblemWorkspace: React.FC<ProblemWorkspaceProps> = ({
           )}
         </div>
 
+        {/* Draggable Resizer Bar */}
+        <div
+          className={`split-resizer ${isDragging ? 'dragging' : ''}`}
+          onMouseDown={handleMouseDown}
+          title="Drag to resize panes"
+        >
+          <div className="resizer-handle-bar" />
+        </div>
+
         {/* Right Panel: Interactive Code Editor */}
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <div
+          className="workspace-right-panel"
+          style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100%',
+            paddingLeft: '0.75rem',
+            minWidth: '280px',
+          }}
+        >
           <CodeEditor
             value={sourceCode}
             onChange={setSourceCode}
