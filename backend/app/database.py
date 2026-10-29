@@ -8,13 +8,22 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 
 from app.config import settings
 
+# Ensure database URL explicitly uses psycopg2 driver if generic scheme is passed
+database_url = settings.database_url
+if database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql+psycopg2://", 1)
+elif database_url.startswith("postgresql://"):
+    database_url = database_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+elif database_url.startswith("postgresql+psycopg://"):
+    database_url = database_url.replace("postgresql+psycopg://", "postgresql+psycopg2://", 1)
+
 # Configure engine args for SQLite compatibility during testing if specified
 engine_kwargs = {}
-if settings.database_url.startswith("sqlite"):
+if database_url.startswith("sqlite"):
     engine_kwargs["connect_args"] = {"check_same_thread": False}
 
 engine = create_engine(
-    settings.database_url,
+    database_url,
     pool_pre_ping=True,
     pool_recycle=300,
     **engine_kwargs,

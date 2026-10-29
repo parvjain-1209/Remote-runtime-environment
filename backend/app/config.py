@@ -53,6 +53,13 @@ class Settings:
             url = url.replace("@localhost:", "@postgres:")
         if is_in_docker and "@127.0.0.1:" in url:
             url = url.replace("@127.0.0.1:", "@postgres:")
+        # Normalize dialect to postgresql+psycopg2 if generic postgres or postgresql scheme is provided
+        if url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql+psycopg2://", 1)
+        elif url.startswith("postgresql://"):
+            url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
+        elif url.startswith("postgresql+psycopg://"):
+            url = url.replace("postgresql+psycopg://", "postgresql+psycopg2://", 1)
         # Cloud PostgreSQL (Render) requires SSL
         if url.startswith("postgresql") and "sslmode" not in url and "localhost" not in url and "127.0.0.1" not in url:
             sep = "&" if "?" in url else "?"
