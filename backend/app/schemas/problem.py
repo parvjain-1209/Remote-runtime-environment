@@ -42,3 +42,21 @@ class ProblemDetail(ProblemBase):
     sample_testcases: List[TestCaseSample] = []
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ProblemCreate(ProblemBase):
+    """Schema for problem creation."""
+    pass
+
+
+class ProblemUpdate(BaseModel):
+    """Schema for problem update (partial update allowed)."""
+    title: Optional[str] = None
+    description: Optional[str] = None
+    input_description: Optional[str] = None
+    output_description: Optional[str] = None
+    difficulty: Optional[str] = None
+    tags: Optional[str] = None
+    time_limit_ms: Optional[int] = None
+    memory_limit_mb: Optional[int] = None
+

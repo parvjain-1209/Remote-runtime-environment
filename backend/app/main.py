@@ -3,6 +3,7 @@ FastAPI Application Entry Point.
 """
 
 import os
+import socket
 import subprocess
 import sys
 from contextlib import asynccontextmanager
@@ -20,13 +21,17 @@ from app.services.queue_client import queue_client
 async def lifespan(app: FastAPI):
     """Application startup and shutdown events."""
     init_db()
-    # Spawn the background execution worker on startup
-    worker_proc = subprocess.Popen(
-        [sys.executable, "-m", "worker.worker"],
-        env={**os.environ, "PYTHONPATH": "."}
-    )
+    # Spawn the background execution worker on startup if enabled
+    worker_proc = None
+    run_embedded_worker = os.getenv("RUN_EMBEDDED_WORKER", "true").lower() != "false"
+    if run_embedded_worker:
+        worker_proc = subprocess.Popen(
+            [sys.executable, "-m", "worker.worker"],
+            env={**os.environ, "PYTHONPATH": "."}
+        )
     yield
-    worker_proc.terminate()
+    if worker_proc:
+        worker_proc.terminate()
 
 
 app = FastAPI(
@@ -35,6 +40,14 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def add_backend_instance_header(request: Request, call_next):
+    response = await call_next(request)
+    instance_name = os.getenv("INSTANCE_NAME") or socket.gethostname()
+    response.headers["X-Backend-Instance"] = instance_name
+    return response
 
 
 @app.middleware("http")

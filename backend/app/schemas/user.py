@@ -3,7 +3,7 @@ Pydantic Schemas for User Authentication & User Statistics.
 """
 
 from datetime import datetime
-from typing import Dict
+from typing import Dict, Optional
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
@@ -16,6 +16,7 @@ class UserRegister(BaseModel):
 class UserLogin(BaseModel):
     username: str
     password: str
+    totp_code: Optional[str] = None
 
 
 class UserResponse(BaseModel):
@@ -24,7 +25,18 @@ class UserResponse(BaseModel):
     id: int
     username: str
     email: EmailStr
+    role: str = "student"
+    is_mfa_enabled: bool = False
     created_at: datetime
+
+
+class MFASetupResponse(BaseModel):
+    secret: str
+    otpauth_uri: str
+
+
+class MFAEnableRequest(BaseModel):
+    code: str
 
 
 class Token(BaseModel):

@@ -2,6 +2,7 @@
 Database Connection & Session Management.
 """
 
+import os
 from typing import Generator
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
@@ -17,17 +18,28 @@ elif database_url.startswith("postgresql://"):
 elif database_url.startswith("postgresql+psycopg://"):
     database_url = database_url.replace("postgresql+psycopg://", "postgresql+psycopg2://", 1)
 
+pool_size = int(os.getenv("DB_POOL_SIZE", "5"))
+max_overflow = int(os.getenv("DB_MAX_OVERFLOW", "10"))
+
 # Configure engine args for SQLite compatibility during testing if specified
 engine_kwargs = {}
 if database_url.startswith("sqlite"):
     engine_kwargs["connect_args"] = {"check_same_thread": False}
-
-engine = create_engine(
-    database_url,
-    pool_pre_ping=True,
-    pool_recycle=300,
-    **engine_kwargs,
-)
+    engine = create_engine(
+        database_url,
+        pool_pre_ping=True,
+        pool_recycle=300,
+        **engine_kwargs,
+    )
+else:
+    engine = create_engine(
+        database_url,
+        pool_size=pool_size,
+        max_overflow=max_overflow,
+        pool_pre_ping=True,
+        pool_recycle=300,
+        **engine_kwargs,
+    )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  backend-1:
+    build: ./backend
+    env_file: .env
+    environment:
+      - INSTANCE_NAME=backend-1
+      - RUN_EMBEDDED_WORKER=false
+      - DB_POOL_SIZE=3
+      - DB_MAX_OVERFLOW=2
+    expose:
+      - "10000"
+
+  backend-2:
+    build: ./backend
+    env_file: .env
+    environment:
+      - INSTANCE_NAME=backend-2
+      - RUN_EMBEDDED_WORKER=false
+      - DB_POOL_SIZE=3
+      - DB_MAX_OVERFLOW=2
+    expose:
+      - "10000"
+
+  backend-3:
+    build: ./backend
+    env_file: .env
+    environment:
+      - INSTANCE_NAME=backend-3
+      - RUN_EMBEDDED_WORKER=false
+      - DB_POOL_SIZE=3
+      - DB_MAX_OVERFLOW=2
+    expose:
+      - "10000"
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./nginx/${NGINX_CONF:-nginx-3.conf}:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend-1
+      - backend-2
+      - backend-3
